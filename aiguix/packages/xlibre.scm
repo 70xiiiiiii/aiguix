@@ -1431,3 +1431,36 @@ video from Video4Linux devices, such as TV cards.")
      "This package provides a video driver for the VirtualBox virtual graphics
 device for the XLibre X server.")
     (license license:x11)))
+
+(define-public xlibre-video-vesa
+  (package
+    (name "xlibre-video-vesa")
+    (version "25.0.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-video-vesa")
+             (commit (string-append "xlibre-xf86-video-vesa-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0x3f5db1q5pxvml787zkl0ca82aqk2zlss1b4jvyv9qcjsbwf929"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules")
+              "CFLAGS=-g -O2 -Wno-error=implicit-function-declaration")))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list xlibre-server))
+    (supported-systems (filter (lambda (system)
+                                 (or (string-prefix? "i686-" system)
+                                     (string-prefix? "x86_64-" system)))
+                               %supported-systems))
+    (home-page "https://github.com/X11Libre/xf86-video-vesa")
+    (synopsis "VESA video driver for XLibre")
+    (description
+     "This package provides a generic VESA video driver for the XLibre X
+server.")
+    (license license:x11)))
