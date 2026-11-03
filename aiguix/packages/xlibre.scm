@@ -1152,3 +1152,32 @@ the XLibre X server.")
      "This package provides a video driver for Rendition Verite graphics chips
 for the XLibre X server.")
     (license license:x11)))
+
+(define-public xlibre-video-s3virge
+  (package
+    (name "xlibre-video-s3virge")
+    (version "25.0.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-video-s3virge")
+             (commit (string-append "xlibre-xf86-video-s3virge-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1jnkbbc3zsys8pddj63c4bklcl7i5wbjgar2gp38yv0f4pd4as20"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules")
+              "CFLAGS=-g -O2 -Wno-error=implicit-function-declaration")))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list xlibre-server))
+    (home-page "https://github.com/X11Libre/xf86-video-s3virge")
+    (synopsis "S3 ViRGE video driver for XLibre")
+    (description
+     "This package provides a video driver for S3 ViRGE graphics chips for the
+XLibre X server.")
+    (license license:x11)))
