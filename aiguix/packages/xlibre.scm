@@ -242,3 +242,30 @@ most mice, keyboards, tablets and touchscreens.")
      "This package provides a joystick input driver for the XLibre X
 server.  It is used to control the pointer with a joystick device.")
     (license license:x11)))
+
+(define-public xlibre-input-keyboard
+  (package
+    (name "xlibre-input-keyboard")
+    (version "25.0.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-input-keyboard")
+             (commit (string-append "xlibre-xf86-input-keyboard-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0f9avrf5nq0x901m0zij5idkhg2y50nj60065bdjhv1msnlgpwbk"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules"))))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list xlibre-server))
+    (home-page "https://github.com/X11Libre/xf86-input-keyboard")
+    (synopsis "Keyboard input driver for XLibre")
+    (description
+     "This package provides a keyboard input driver for the XLibre X server.")
+    (license license:x11)))
