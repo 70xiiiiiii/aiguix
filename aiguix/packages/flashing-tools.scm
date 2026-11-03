@@ -27,7 +27,9 @@
   #:use-module (guix gexp)
   #:use-module (guix git-download)
   #:use-module ((guix licenses) #:prefix license:)
-  #:use-module (guix packages))
+  #:use-module (guix packages)
+  #:use-module (gnu packages check)
+  #:use-module (gnu packages linux))
 
 (define-public metee
   (package
@@ -57,4 +59,45 @@
 Converged Security and Management Engine (CSME) and of the Graphics System
 Controller (GSC) of Intel discrete GPUs through the Linux @code{mei} driver.
 It provides a C and a C++ interface.")
+    (license license:asl2.0)))
+
+(define-public igsc
+  (package
+    (name "igsc")
+    (version "1.3.2")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/intel/igsc")
+             (commit (string-append "V" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0hnhl7byva7cmxp0fxl468dwyvhflyh6zw4134q1whh2h107iaks"))))
+    (build-system cmake-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list "-DENABLE_TESTS=ON")
+      #:phases
+      #~(modify-phases %standard-phases
+          (replace 'check
+            (lambda* (#:key tests? #:allow-other-keys)
+              ;; The unit tests are only registered in tests/, which calls
+              ;; enable_testing() itself.
+              (when tests?
+                (with-directory-excursion "tests"
+                  (invoke "ctest" "--output-on-failure"
+                          "--no-tests=error"))))))))
+    (native-inputs (list cmocka))
+    (inputs (list eudev metee))
+    (home-page "https://github.com/intel/igsc")
+    (synopsis "Firmware update tool for Intel discrete GPUs")
+    (description
+     "igsc updates the firmware of Intel discrete GPUs, such as the Arc
+series, through their Graphics System Controller (GSC).  It updates the GSC
+firmware, the option ROM and the firmware data, and reports the versions
+installed on the device and in an update image.  It consists of the
+@command{igsc} command and the @code{libigsc} library.  The firmware images
+themselves are not part of this package.")
     (license license:asl2.0)))
