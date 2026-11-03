@@ -1398,3 +1398,36 @@ XLibre X server.")
      "This package provides an Xv driver for the XLibre X server that shows
 video from Video4Linux devices, such as TV cards.")
     (license license:x11)))
+
+(define-public xlibre-video-vbox
+  (package
+    (name "xlibre-video-vbox")
+    (version "25.0.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-video-vbox")
+             (commit (string-append "xlibre-xf86-video-vbox-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0z38gh0c29q70nv8bgjag8pzc48l9cl5ndxs02zkq9yx0fgx4wc9"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules")
+              "CFLAGS=-g -O2 -Wno-error=implicit-function-declaration")))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list xlibre-server))
+    (supported-systems (filter (lambda (system)
+                                 (or (string-prefix? "i686-" system)
+                                     (string-prefix? "x86_64-" system)))
+                               %supported-systems))
+    (home-page "https://github.com/X11Libre/xf86-video-vbox")
+    (synopsis "VirtualBox video driver for XLibre")
+    (description
+     "This package provides a video driver for the VirtualBox virtual graphics
+device for the XLibre X server.")
+    (license license:x11)))
