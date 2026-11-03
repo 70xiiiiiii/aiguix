@@ -304,3 +304,34 @@ libinput.  It is a thin wrapper around libinput, so it provides all features
 that libinput supports and does little beyond.")
     (license (list license:x11 ;install-sh
                    license:expat))))
+
+(define-public xlibre-input-mouse
+  (package
+    (name "xlibre-input-mouse")
+    (version "25.0.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-input-mouse")
+             (commit (string-append "xlibre-xf86-input-mouse-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "19iy13yl1fahh8mj219srkrzy0a40ssdikkjx07x7v8dx3qrdjpk"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules")
+              (string-append "--with-sdkdir="
+                             #$output "/include/xorg"))))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list xlibre-server))
+    (home-page "https://github.com/X11Libre/xf86-input-mouse")
+    (synopsis "Mouse input driver for XLibre")
+    (description
+     "This package provides a mouse input driver for the XLibre X server.  It
+supports serial, bus and PS/2 mice, and mouse types supported by specific
+operating systems, such as USB mice.")
+    (license license:x11)))
