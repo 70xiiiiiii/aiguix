@@ -754,6 +754,8 @@ std::unique_ptr<ov::Tensor>" all)
                   tensorflow-lite
                   (list util-linux "lib")
                   zlib))
+    ;; openvino loads the GPU and NPU drivers, but ovms does not propagate it.
+    (native-search-paths (package-native-search-paths openvino))
     (supported-systems '("x86_64-linux"))
     (home-page "https://github.com/openvinotoolkit/model_server")
     (synopsis "Inference server for OpenVINO models")
