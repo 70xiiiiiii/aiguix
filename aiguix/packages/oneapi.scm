@@ -25,6 +25,7 @@
 
 (define-module (aiguix packages oneapi)
   #:use-module (guix build-system cmake)
+  #:use-module (guix build-system copy)
   #:use-module (guix build-system meson)
   #:use-module (guix build-system pyproject)
   #:use-module (guix gexp)
@@ -97,6 +98,39 @@
       (list (search-path-specification
              (variable "GUIX_LEVEL_ZERO_DRIVER_PATH")
              (files '("lib"))))))))
+
+(define-public level-zero-npu-extensions
+  ;; There are no releases; this is the commit that the NPU plugin of
+  ;; OpenVINO 2026.4.1 uses.
+  (let ((commit "b11dc98b48f9f0dbb8c3b44f73b42f295a32097f")
+        (revision "0"))
+    (package
+      (name "level-zero-npu-extensions")
+      (version (git-version "0.0.0" revision commit))
+      (source
+       (origin
+         (method git-fetch)
+         (uri (git-reference
+               (url "https://github.com/intel/level-zero-npu-extensions")
+               (commit commit)))
+         (file-name (git-file-name name version))
+         (sha256
+          (base32 "05wj4240z0yrbsxbvsz2skbch2ajrxpgjvvqkia59iz2aqgyqn6k"))))
+      (build-system copy-build-system)
+      (arguments
+       (list
+        ;; The headers include "ze_api.h", so they go next to it.
+        #:install-plan
+        #~'(("." "include/level_zero"
+             #:include-regexp ("\\.h$")))))
+      (home-page "https://github.com/intel/level-zero-npu-extensions")
+      (synopsis "Level Zero extension headers for Intel NPUs")
+      (description
+       "This package provides the headers of the Level Zero extensions for the
+neural processing unit (NPU) of Intel CPUs, such as the graph extension used
+to load and run compiled models.  The NPU driver, the NPU plugin of OpenVINO
+and the NPU compiler are built against them.")
+      (license license:expat))))
 
 (define-public openvino
   (package
