@@ -1240,3 +1240,32 @@ the XLibre X server.")
      "This package provides a video driver for Silicon Motion graphics chips
 for the XLibre X server.")
     (license license:x11)))
+
+(define-public xlibre-video-sis
+  (package
+    (name "xlibre-video-sis")
+    (version "25.0.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-video-sis")
+             (commit (string-append "xlibre-xf86-video-sis-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "12npq9jyxxyncybnpd86wn7af9hggjq781a9ssbmfnl3p19djqqm"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules")
+              "CFLAGS=-g -O2 -Wno-error=implicit-function-declaration")))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list mesa xlibre-server xorgproto))
+    (home-page "https://github.com/X11Libre/xf86-video-sis")
+    (synopsis "SiS video driver for XLibre")
+    (description
+     "This package provides a video driver for SiS graphics chips of the
+300/315/330/340 series for the XLibre X server.")
+    (license license:bsd-3)))
