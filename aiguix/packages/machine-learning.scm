@@ -28,7 +28,10 @@
   #:use-module (guix packages)
   #:use-module (guix gexp)
   #:use-module (guix download)
+  #:use-module (guix git-download)
+  #:use-module ((guix licenses) #:prefix license:)
   #:use-module (guix build-system cargo)
+  #:use-module (guix build-system copy)
   #:use-module (guix build-system pyproject)
   #:use-module (gnu packages check)
   #:use-module (gnu packages python-build)
@@ -124,3 +127,32 @@
            python-pytest-asyncio
            python-setuptools
            guix:python-torchvision))))
+
+(define-public safetensors-h
+  (let ((commit "13c3e315bb99c3c631c56f1540cb810ba81cd461")
+        (revision "0"))
+    (package
+      (name "safetensors-h")
+      (version (git-version "0" revision commit))
+      (source
+       (origin
+         (method git-fetch)
+         (uri (git-reference
+               (url "https://github.com/hsnyder/safetensors.h")
+               (commit commit)))
+         (file-name (git-file-name name version))
+         (sha256
+          (base32 "1ay0dvb1c7ah3b53glqvri6w06ndsr7gaxkh4dnvkg3214mf5dkc"))))
+      (build-system copy-build-system)
+      (arguments
+       (list
+        #:install-plan
+        #~'(("safetensors.h" "include/")
+            ("LICENSE" "share/doc/safetensors-h/"))))
+      (home-page "https://github.com/hsnyder/safetensors.h")
+      (synopsis "Single-header C library to read safetensors files")
+      (description
+       "This is a public domain single-header C library for reading
+.safetensors files, which are sometimes used to store machine learning
+models.")
+      (license license:unlicense))))
