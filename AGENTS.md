@@ -23,11 +23,14 @@ humans who work with them. What the channel is for is in the
 3. **No version variants.** Do not add `foo-1.22` next to `foo` just for
    one package. If the Guix version is too old, define the newer version
    here by inheriting from the Guix package, and offer the update to Guix.
-4. **Change sources in the package definition.** Use `substitute*` in a
-   build phase or a `snippet` in the `origin`. No patch files. A build
-   file that replaces the upstream build system (for example CMake instead
-   of Bazel) goes into `aux-files/<package>/`. Say why in the commit
-   message.
+4. **Change sources as Guix does.** Make small changes, such as paths,
+   version checks or flags, with `substitute*` in a build phase or in the
+   `snippet` of the `origin`; use a patch for real code changes that would
+   become unreadable that way. Fetch a patch that upstream publishes as
+   an `origin` by URL and hash instead of copying it. A build file that
+   replaces the upstream build system (for example CMake instead of
+   Bazel) goes into `aux-files/<package>/`. Say why in a comment and in
+   the commit message.
 5. **Keep single-use things inside the package.** A source used by one
    package only is an `origin` inside it, not a separate definition.
    Avoid helper variables.
