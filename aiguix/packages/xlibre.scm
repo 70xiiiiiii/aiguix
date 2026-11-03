@@ -787,3 +787,38 @@ for the XLibre X server.")
 processors for the XLibre X server.  It supports EXA acceleration, Xv overlay
 and dynamic rotation with XRandR.")
     (license license:x11)))
+
+(define-public xlibre-video-i128
+  (package
+    (name "xlibre-video-i128")
+    (version "25.0.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-video-i128")
+             (commit (string-append "xlibre-xf86-video-i128-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "19563k236f401qpp20ckvxnys3qdys3903vnxfjdjwqlbyf0za7j"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules")
+              "CFLAGS=-g -O2 -Wno-error=implicit-function-declaration")
+      #:phases
+      #~(modify-phases %standard-phases
+          (replace 'bootstrap
+            (lambda _
+              ;; autogen.sh runs configure unconditionally.
+              (invoke "autoreconf" "-vfi"))))))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list xlibre-server))
+    (home-page "https://github.com/X11Libre/xf86-video-i128")
+    (synopsis "Number Nine Imagine 128 video driver for XLibre")
+    (description
+     "This package provides a video driver for Number Nine Imagine 128
+graphics cards for the XLibre X server.")
+    (license license:x11)))
