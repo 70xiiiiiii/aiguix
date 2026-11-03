@@ -44,6 +44,59 @@
   #:use-module ((gnu packages machine-learning) #:prefix guix:)
   #:use-module (aiguix packages python-web))
 
+(define-public python-optimum
+  (package
+    (name "python-optimum")
+    (version "2.3.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/huggingface/optimum")
+             (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "15hl3xzpsiv1dv81mdp57cra29rfwbq9ax62chc5jifahk92h4rl"))))
+    (build-system pyproject-build-system)
+    (arguments
+     (list
+      ;; Most tests download models from the Hugging Face Hub, and
+      ;; test_register_command writes into the installed package.
+      #:test-flags
+      #~(list "tests/common"
+              "tests/cli/test_cli.py::TestCLI::test_env_commands")
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack 'register-commands-once
+            (lambda _
+              ;; The namespace of the command modules of backends can be
+              ;; found both in a profile and, through the wrapper of
+              ;; optimum-cli, in the store; do not register a command twice.
+              (substitute* "optimum/commands/optimum_cli.py"
+                (("^    commands_to_register = \\[\\]" all)
+                 (string-append all "\n    loaded_modules = set()"))
+                (("if register_file\\.suffix != \"\\.py\":")
+                 (string-append "if (register_file.suffix != \".py\""
+                                " or register_file.stem in loaded_modules):"))
+                (("^( +)register_module = importlib\\.import_module.*" all
+                  indent)
+                 (string-append all indent
+                                "loaded_modules.add("
+                                "register_file.stem)\n"))))))))
+    (propagated-inputs (list python-huggingface-hub python-numpy
+                             python-packaging guix:python-pytorch
+                             python-transformers))
+    (native-inputs (list python-parameterized python-pytest
+                         python-setuptools))
+    (home-page "https://huggingface.co/docs/optimum")
+    (synopsis "Hardware optimization extension of Hugging Face Transformers")
+    (description
+     "Optimum extends Hugging Face Transformers with tools to export,
+quantize and optimize models for specific hardware and runtimes.  This package
+provides the common base and the @command{optimum-cli} command; backends such
+as OpenVINO are provided by separate packages that plug into it.")
+    (license license:asl2.0)))
+
 (define-public python-safetensors
   (package
     (inherit guix:python-safetensors)
