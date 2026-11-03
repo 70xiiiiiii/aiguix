@@ -855,3 +855,35 @@ graphics cards for the XLibre X server.")
      "This package provides a video driver for Intel i740 graphics chips for
 the XLibre X server.")
     (license license:x11)))
+
+(define-public xlibre-video-intel
+  (package
+    (name "xlibre-video-intel")
+    (version "25.0.2")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-video-intel")
+             (commit (string-append "xlibre-xf86-video-intel-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0b8llgwl9w4j13qcwyj6zp0i2wdwzzsbrw57fzvmn55ms0l3ixf0"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules"))))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list eudev libx11 libxfont2 mesa xlibre-server))
+    (supported-systems (filter (lambda (system)
+                                 (or (string-prefix? "i686-" system)
+                                     (string-prefix? "x86_64-" system)))
+                               %supported-systems))
+    (home-page "https://github.com/X11Libre/xf86-video-intel")
+    (synopsis "Intel video driver for XLibre")
+    (description
+     "This package provides a 2D video driver for Intel graphics chips for the
+XLibre X server.")
+    (license license:x11)))
