@@ -65,12 +65,12 @@ guix style -L . <package>
 
 ## Commits and pushes
 
-- **One push, one commit, one file.** Each push adds exactly one commit,
-  and that commit changes exactly one file.
-- **One definition per commit.** A commit adds or changes exactly one
-  `define` or `define-public`. A new module file comes with the commit of
-  its first definition.
-- **Dependencies first.** Every commit builds on its own.
+- **One commit, one file, one definition.** A commit changes exactly one
+  file and adds or changes exactly one `define` or `define-public`. A new
+  module file comes with the commit of its first definition.
+- **A push may hold a series.** Several such commits can go out in one
+  push, as in Guix. Dependencies come first, and every commit in the
+  series builds on its own.
 - **Messages in Guix style:**
 
   ```
@@ -86,7 +86,9 @@ guix style -L . <package>
 - **Always add the trailer.** `Co-Authored-By:` names the AI model that
   took part.
 - **Fix before pushing, never after.** Before the push, fold a correction
-  into the commit with `git commit --amend`. Pushed commits are never
+  into the commit it belongs to: `git commit --amend` for the last one,
+  otherwise `git commit --fixup <commit>` and
+  `git rebase -i --autosquash origin/main`. Pushed commits are never
   rewritten: no rebase, no force push, no merge commits.
-- **A human pushes.** An agent prepares the commit; a human reads it with
-  `git show` and pushes it.
+- **A human pushes.** An agent prepares the commits; a human reads them
+  with `git log -p origin/main..` and pushes them.
