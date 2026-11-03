@@ -470,3 +470,43 @@ the XLibre X server.")
      "This package provides an input driver for Wacom tablets for the XLibre X
 server.")
     (license license:gpl2+)))
+
+(define-public xlibre-video-amdgpu
+  (package
+    (name "xlibre-video-amdgpu")
+    (version "25.1.2")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-video-amdgpu")
+             (commit (string-append "xlibre-xf86-video-amdgpu-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1gxanj05miim1mrdplrpf6kbicsjyf839hzjl1clamcpsq0bypgz"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules")
+              "CFLAGS=-g -O2 -Wno-error=implicit-function-declaration")
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-before 'configure 'set-install-directories
+            (lambda _
+              ;; xlibre-server.pc points into the server's store item.
+              (setenv "PKG_CONFIG_XLIBRE_SERVER_VIDEO_DRIVERS_DIR"
+                      (string-append #$output "/lib/xorg/modules/drivers"))
+              (setenv "PKG_CONFIG_XLIBRE_SERVER_DRIVER_MAN_DIR"
+                      (string-append #$output "/share/man/man4"))
+              (setenv "PKG_CONFIG_XORG_SERVER_SYSCONFIGDIR"
+                      (string-append #$output "/share/X11/xorg.conf.d")))))))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list eudev mesa xlibre-server))
+    (home-page "https://github.com/X11Libre/xf86-video-amdgpu")
+    (synopsis "AMD Radeon video driver for XLibre")
+    (description
+     "This package provides a video driver for AMD Radeon graphics cards
+supported by the amdgpu kernel driver, for the XLibre X server.")
+    (license license:x11)))
