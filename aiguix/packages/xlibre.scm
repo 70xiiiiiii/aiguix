@@ -51,6 +51,7 @@
   #:use-module (gnu packages linux)
   #:use-module (gnu packages pkg-config)
   #:use-module (gnu packages python)
+  #:use-module (gnu packages spice)
   #:use-module (gnu packages xdisorg)
   #:use-module (gnu packages xorg))
 
@@ -1057,4 +1058,39 @@ by the nouveau kernel driver, for the XLibre X server.")
     (description
      "This package provides a 2D video driver for older NVIDIA graphics cards
 for the XLibre X server.")
+    (license license:x11)))
+
+(define-public xlibre-video-qxl
+  (package
+    (name "xlibre-video-qxl")
+    (version "25.0.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-video-qxl")
+             (commit (string-append "xlibre-xf86-video-qxl-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "07axgwbqddlj9qvaq8raqzcr3acg7djs8y6s09cm5lsjx0wscyh8"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules")
+              "CFLAGS=-g -O2 -Wno-error=implicit-function-declaration")
+      #:phases
+      #~(modify-phases %standard-phases
+          (replace 'bootstrap
+            (lambda _
+              ;; autogen.sh runs configure unconditionally.
+              (invoke "autoreconf" "-vfi"))))))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list libxfont2 spice-protocol xlibre-server xorgproto))
+    (home-page "https://github.com/X11Libre/xf86-video-qxl")
+    (synopsis "QXL video driver for XLibre")
+    (description
+     "This package provides a video driver for the SPICE QXL virtual graphics
+device for the XLibre X server.")
     (license license:x11)))
