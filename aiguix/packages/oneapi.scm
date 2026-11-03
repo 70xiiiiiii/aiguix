@@ -29,6 +29,7 @@
   #:use-module (guix git-download)
   #:use-module ((guix licenses) #:prefix license:)
   #:use-module (guix packages)
+  #:use-module (guix utils)
   #:use-module (gnu packages compression)
   #:use-module (gnu packages cpp)
   #:use-module (gnu packages linux)
@@ -38,6 +39,7 @@
   #:use-module (gnu packages profiling)
   #:use-module (gnu packages protobuf)
   #:use-module (gnu packages python)
+  #:use-module (gnu packages python-xyz)
   #:use-module (gnu packages serialization)
   #:use-module (gnu packages video)
   #:use-module (gnu packages web)
@@ -253,3 +255,100 @@ PyTorch into its own intermediate representation and runs them on CPUs and
 Intel GPUs.")
     ;; OpenVINO and oneDNN are under the Apache 2.0 license, MLAS under Expat.
     (license (list license:asl2.0 license:expat))))
+
+(define-public python-openvino
+  (package
+    (inherit openvino)
+    (name "python-openvino")
+    (outputs '("out"))
+    (arguments
+     (list
+      #:build-type "Release"
+      ;; There are no CTest tests; 'check' runs after 'install' instead.
+      #:configure-flags
+      #~(let ((developer (search-input-directory %build-inputs
+                                                 "developer_package")))
+          (list "-DCPACK_GENERATOR=CONDA-FORGE" ;GNU installation layout
+                (string-append "-DOpenVINODeveloperPackage_DIR="
+                               developer "/cmake")
+                ;; Do not keep a reference to the "developer" output, which
+                ;; is only needed at build time, through __FILE__.
+                (string-append "-DCMAKE_CXX_FLAGS=-ffile-prefix-map="
+                               developer "=developer_package")
+                "-DENABLE_PYTHON=ON"
+                "-DENABLE_WHEEL=OFF"))
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack 'chdir
+            (lambda _
+              ;; Build only the bindings, against the installed OpenVINO.
+              (chdir "src/bindings/python")))
+          (add-after 'chdir 'find-ittapi
+            (lambda _
+              ;; The developer package refers to ittapi::ittnotify without
+              ;; looking for ittapi itself.
+              (substitute* "CMakeLists.txt"
+                (("find_package\\(OpenVINODeveloperPackage REQUIRED\\)" all)
+                 (string-append "find_package(ittapi REQUIRED)\n    "
+                                all)))))
+          (add-before 'configure 'set-version
+            (lambda _
+              ;; The bindings refuse to load unless their build number
+              ;; matches that of libopenvino.so.
+              (setenv "CI_BUILD_NUMBER"
+                      (string-append #$(package-version openvino)
+                                     "-000-guix"))))
+          (replace 'install
+            (lambda _
+              ;; The Python components are excluded from the default
+              ;; installation.
+              (invoke "cmake" "--install" "." "--component"
+                      (string-append
+                       "pyopenvino_python"
+                       #$(version-major+minor (package-version python))))
+              ;; The model conversion API (convert_model), which the wheel
+              ;; includes, is a separate CMake project in tools/ovc.
+              (copy-recursively
+               "../../../tools/ovc/openvino/tools/ovc"
+               (string-append
+                #$output "/lib/python"
+                #$(version-major+minor (package-version python))
+                "/site-packages/openvino/tools/ovc"))))
+          (add-after 'install 'install-metadata
+            (lambda _
+              ;; Python packages that require openvino, such as
+              ;; optimum-intel, look for the metadata of its wheel.
+              (let ((dist-info
+                     (string-append
+                      #$output "/lib/python"
+                      #$(version-major+minor (package-version python))
+                      "/site-packages/openvino-"
+                      #$(package-version openvino) ".dist-info")))
+                (mkdir-p dist-info)
+                (call-with-output-file (string-append dist-info "/METADATA")
+                  (lambda (port)
+                    (format port "Metadata-Version: 2.1~%Name: openvino~%")
+                    (format port "Version: ~a~%"
+                            #$(package-version openvino)))))))
+          (delete 'check)
+          (add-after 'install 'check
+            (lambda* (#:key tests? #:allow-other-keys)
+              (when tests?
+                (setenv "GUIX_PYTHONPATH"
+                        (string-append
+                         #$output "/lib/python"
+                         #$(version-major+minor (package-version python))
+                         "/site-packages:" (getenv "GUIX_PYTHONPATH")))
+                (invoke "python3" "-c"
+                        (string-append "import openvino;"
+                                       "print(openvino.get_version());"
+                                       "openvino.Core();"
+                                       "openvino.convert_model"))))))))
+    (native-inputs (list pybind11 (list openvino "developer")))
+    (inputs (list ittapi openvino pugixml python))
+    (propagated-inputs (list python-numpy))
+    (synopsis "Python bindings for OpenVINO")
+    (description
+     "This package provides the Python API of OpenVINO, a toolkit for
+optimizing and deploying deep learning models on CPUs and Intel GPUs.")
+    (license license:asl2.0)))
