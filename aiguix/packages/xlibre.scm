@@ -755,3 +755,35 @@ XLibre X server, for example for remote sessions with xpra.")
      "This package provides a video driver for the Linux framebuffer device
 for the XLibre X server.")
     (license license:x11)))
+
+(define-public xlibre-video-geode
+  (package
+    (name "xlibre-video-geode")
+    (version "25.0.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-video-geode")
+             (commit (string-append "xlibre-xf86-video-geode-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1vmp624qp51lvyby0mbih2fa7llqrw5x4s5z2mxrzllvydy833m3"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules"))))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list xlibre-server))
+    (supported-systems (filter (lambda (system)
+                                 (string-prefix? "i686-" system))
+                               %supported-systems))
+    (home-page "https://github.com/X11Libre/xf86-video-geode")
+    (synopsis "AMD Geode GX/LX video driver for XLibre")
+    (description
+     "This package provides a video driver for the AMD Geode GX and LX
+processors for the XLibre X server.  It supports EXA acceleration, Xv overlay
+and dynamic rotation with XRandR.")
+    (license license:x11)))
