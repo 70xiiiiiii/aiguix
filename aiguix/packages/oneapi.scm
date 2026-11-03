@@ -75,6 +75,22 @@
   #:use-module (aiguix packages version-control)
   #:use-module (aiguix packages web))
 
+;; The loader of Guix finds drivers such as intel-compute-runtime only
+;; through LD_LIBRARY_PATH.  This variant finds them in the profile.
+(define-public level-zero/driver-path
+  (hidden-package
+   (package
+     (inherit level-zero)
+     (source
+      (origin
+        (inherit (package-source level-zero))
+        (patches
+         (list (local-file "patches/level-zero-guix-driver-path.patch")))))
+     (native-search-paths
+      (list (search-path-specification
+             (variable "GUIX_LEVEL_ZERO_DRIVER_PATH")
+             (files '("lib"))))))))
+
 (define-public openvino
   (package
     (name "openvino")

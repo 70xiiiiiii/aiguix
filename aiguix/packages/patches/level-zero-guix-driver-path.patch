@@ -1,0 +1,53 @@
+Let the Level Zero loader find its drivers in the directories listed in
+GUIX_LEVEL_ZERO_DRIVER_PATH.
+
+The loader only looks for drivers such as libze_intel_gpu.so.1 in
+LD_LIBRARY_PATH and in fixed FHS directories, and loads them by bare
+name.  None of these exist on Guix.  With this patch it also searches
+GUIX_LEVEL_ZERO_DRIVER_PATH, set by a search path of the package, and
+loads a driver found there by its full file name.
+
+--- a/source/loader/linux/driver_discovery_lin.cpp
++++ b/source/loader/linux/driver_discovery_lin.cpp
+@@ -108,6 +108,21 @@
+   return paths;
+ }
+ 
++// Return the full file name of FILENAME in the first directory of
++// GUIX_LEVEL_ZERO_DRIVER_PATH that has it, or an empty string.
++static std::string findInGuixDriverPath(const std::string& filename) {
++  const char* guixPath = getenv("GUIX_LEVEL_ZERO_DRIVER_PATH");
++  if (guixPath) {
++    for (const auto& dir : splitPaths(guixPath)) {
++      std::string fullPath = dir + "/" + filename;
++      if (fileExistsReadable(fullPath)) {
++        return fullPath;
++      }
++    }
++  }
++  return "";
++}
++
+ // Main function: search for a library file in all known library paths
+ static bool libraryExistsInSearchPaths(const std::string& filename) {
+   auto paths = getLibrarySearchPaths();
+@@ -138,7 +153,8 @@
+   if (altDrivers == nullptr) {
+     // Standard drivers - not custom
+     for (auto path : knownDriverNames) {
+-      if (libraryExistsInSearchPaths(path)) {
++      std::string guixPath = findInGuixDriverPath(path);
++      if (!guixPath.empty() || libraryExistsInSearchPaths(path)) {
+         // Extract the base library name for robust driver type detection
+         // path is like "libze_intel_gpu.so.1"
+         std::string libName = path;
+@@ -165,7 +181,8 @@
+           driverType = ZEL_DRIVER_TYPE_NPU;
+         }
+ 
+-        enabledDrivers.emplace_back(path, false, driverType);
++        enabledDrivers.emplace_back(guixPath.empty() ? path : guixPath,
++                                    false, driverType);
+       }
+     }
+   } else {
