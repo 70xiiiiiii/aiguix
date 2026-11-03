@@ -1029,3 +1029,32 @@ inside a window of another X server.")
      "This package provides a video driver for NVIDIA graphics cards supported
 by the nouveau kernel driver, for the XLibre X server.")
     (license license:x11)))
+
+(define-public xlibre-video-nv
+  (package
+    (name "xlibre-video-nv")
+    (version "25.0.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-video-nv")
+             (commit (string-append "xlibre-xf86-video-nv-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0ylija24r92jv4sjy9ldrllwrlzymq8z43ral7mdilff95x5cqq3"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules")
+              "CFLAGS=-g -O2 -Wno-error=implicit-function-declaration")))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list xlibre-server))
+    (home-page "https://github.com/X11Libre/xf86-video-nv")
+    (synopsis "Legacy NVIDIA video driver for XLibre")
+    (description
+     "This package provides a 2D video driver for older NVIDIA graphics cards
+for the XLibre X server.")
+    (license license:x11)))
