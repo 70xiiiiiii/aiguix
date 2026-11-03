@@ -23,12 +23,51 @@
 ;;; Code:
 
 (define-module (aiguix packages cpp)
+  #:use-module (guix build-system cmake)
   #:use-module (guix build-system copy)
   #:use-module (guix gexp)
   #:use-module (guix git-download)
   #:use-module ((guix licenses) #:prefix license:)
   #:use-module (guix packages)
   #:use-module (gnu packages cpp))
+
+(define-public minitrace
+  ;; No tagged releases.
+  (let ((commit "679ac44bfa1f6537a08dd4638c2ae4ae8c62f556")
+        (revision "0"))
+    (package
+      (name "minitrace")
+      (version (git-version "0.0.0" revision commit))
+      (source
+       (origin
+         (method git-fetch)
+         (uri (git-reference
+               (url "https://github.com/hrydgard/minitrace")
+               (commit commit)))
+         (file-name (git-file-name name version))
+         (sha256
+          (base32 "0h9dxcamw60jclxyd7gq311r6asxzpmn9hhw1da39dv019w5yp6q"))))
+      (build-system cmake-build-system)
+      (arguments
+       (list
+        #:configure-flags
+        #~(list "-DMTR_BUILD_SHARED=ON" "-DMTR_BUILD_TEST=ON")
+        #:phases
+        #~(modify-phases %standard-phases
+            (replace 'check
+              ;; There is no test suite; run the two example programs,
+              ;; which write their traces to the current directory.
+              (lambda* (#:key tests? #:allow-other-keys)
+                (when tests?
+                  (invoke "./minitrace_test")
+                  (invoke "./minitrace_test_mt")))))))
+      (home-page "https://github.com/hrydgard/minitrace")
+      (synopsis "Tracing library for Chrome's trace viewer")
+      (description
+       "Minitrace is a small C library with C++ helpers that records the
+start and end of code blocks as JSON traces, which can be viewed in the
+@code{chrome://tracing} viewer of Chromium-based browsers.")
+      (license license:expat))))
 
 (define-public minja
   (let ((commit "021c2293c187789ef13d56c6cfd89c9b134fd80f")
