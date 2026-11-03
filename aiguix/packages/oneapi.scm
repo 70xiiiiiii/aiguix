@@ -37,7 +37,10 @@
   #:use-module (gnu packages graphviz)
   #:use-module (gnu packages linux)
   #:use-module ((gnu packages machine-learning)
-                #:select (python-scikit-learn sentencepiece))
+                #:select (python-pytorch
+                          python-scikit-learn
+                          python-torchvision
+                          sentencepiece))
   #:use-module (gnu packages oneapi)
   #:use-module (gnu packages opencl)
   #:use-module (gnu packages pcre)
@@ -47,13 +50,15 @@
   #:use-module (gnu packages python)
   #:use-module (gnu packages python-build)
   #:use-module (gnu packages python-science)
+  #:use-module ((gnu packages python-web) #:select (python-requests))
   #:use-module (gnu packages python-xyz)
   #:use-module (gnu packages serialization)
   #:use-module (gnu packages video)
   #:use-module (gnu packages web)
   #:use-module (gnu packages xml)
   #:use-module (aiguix packages cpp)
-  #:use-module (aiguix packages machine-learning))
+  #:use-module (aiguix packages machine-learning)
+  #:use-module (aiguix packages python-web))
 
 (define-public openvino
   (package
@@ -688,3 +693,69 @@ ONNX.")
      "This package provides the Python API of OpenVINO, a toolkit for
 optimizing and deploying deep learning models on CPUs and Intel GPUs.")
     (license license:asl2.0)))
+
+(define-public python-optimum-intel
+  ;; The latest release, 2.2.0, exports Qwen3.5 models only with transformers
+  ;; 5.2 and Gemma 4 models only from transformers 5.5 on; this commit
+  ;; exports both with transformers 5.15.
+  (let ((commit "0100bb36ea09fe8613008ee74cb796dc5e1c379d")
+        (revision "0"))
+    (package
+      (name "python-optimum-intel")
+      (version (git-version "2.3.0.dev0" revision commit))
+      (source
+       (origin
+         (method git-fetch)
+         (uri (git-reference
+               (url "https://github.com/huggingface/optimum-intel")
+               (commit commit)))
+         (file-name (git-file-name name version))
+         (sha256
+          (base32 "0877dxw2y3brfqycslph9vvc0p41dpxnx6cxzrbhml7i9bax6zps"))))
+      (build-system pyproject-build-system)
+      (arguments
+       (list
+        #:phases
+        #~(modify-phases %standard-phases
+            (add-after 'unpack 'skip-git-version
+              (lambda _
+                ;; setup.py appends the output of "git rev-parse" to
+                ;; development versions; the commit is in the Guix version.
+                (substitute* "setup.py"
+                  (("__version__\\.endswith\\(\"\\.dev0\"\\)") "False"))))
+            (replace 'check
+              (lambda* (#:key tests? #:allow-other-keys)
+                ;; The test suite needs models from the Hugging Face Hub;
+                ;; check that the installed OpenVINO backend and its command
+                ;; load.
+                (when tests?
+                  (with-directory-excursion "/tmp"
+                    (invoke "python3" "-c"
+                            (string-append
+                             "from optimum.intel import OVModelForCausalLM;"
+                             "from optimum.intel.utils import import_utils"
+                             " as u;"
+                             "assert u.is_nncf_available();"
+                             "assert u.is_openvino_tokenizers_available()"))
+                    (invoke (string-append #$output "/bin/optimum-cli")
+                            "export" "openvino" "--help"))))))))
+      (propagated-inputs
+       (list openvino-tokenizers
+             python-huggingface-hub
+             python-nncf
+             python-openvino
+             python-optimum
+             python-pytorch
+             python-requests
+             python-torchvision
+             python-transformers))
+      (native-inputs (list python-setuptools))
+      (home-page "https://github.com/huggingface/optimum-intel")
+      (synopsis "OpenVINO backend for Hugging Face Optimum")
+      (description
+       "Optimum Intel connects Hugging Face Transformers and Diffusers with
+OpenVINO.  It exports models to the OpenVINO format, compresses and quantizes
+them with NNCF, and runs them through classes such as
+@code{OVModelForCausalLM}, which replace their Transformers counterparts.  It
+adds the @command{optimum-cli export openvino} command.")
+      (license license:asl2.0))))
