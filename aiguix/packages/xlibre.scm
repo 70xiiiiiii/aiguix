@@ -44,6 +44,7 @@
   #:use-module (guix build-system meson)
   #:use-module (gnu packages autotools)
   #:use-module (gnu packages compression)
+  #:use-module (gnu packages freedesktop)
   #:use-module (gnu packages gl)
   #:use-module (gnu packages glib)
   #:use-module (gnu packages gnupg)
@@ -269,3 +270,37 @@ server.  It is used to control the pointer with a joystick device.")
     (description
      "This package provides a keyboard input driver for the XLibre X server.")
     (license license:x11)))
+
+(define-public xlibre-input-libinput
+  (package
+    (name "xlibre-input-libinput")
+    (version "25.0.1")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-input-libinput")
+             (commit (string-append "xlibre-xf86-input-libinput-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1q2k7l69ig39h4snmbvpxp1c2y32k5h3qqwzcqlnq2hckyx6fakl"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules")
+              (string-append "--with-sdkdir="
+                             #$output "/include/xorg")
+              (string-append "--with-xorg-conf-dir="
+                             #$output "/share/X11/xorg.conf.d"))))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list libinput-minimal xlibre-server))
+    (home-page "https://github.com/X11Libre/xf86-input-libinput")
+    (synopsis "Input driver for XLibre based on libinput")
+    (description
+     "This package provides an input driver for the XLibre X server based on
+libinput.  It is a thin wrapper around libinput, so it provides all features
+that libinput supports and does little beyond.")
+    (license (list license:x11 ;install-sh
+                   license:expat))))
