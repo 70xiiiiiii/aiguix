@@ -726,3 +726,32 @@ the XLibre X server.")
      "This package provides a virtual, off-screen frame buffer driver for the
 XLibre X server, for example for remote sessions with xpra.")
     (license license:x11)))
+
+(define-public xlibre-video-fbdev
+  (package
+    (name "xlibre-video-fbdev")
+    (version "25.0.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-video-fbdev")
+             (commit (string-append "xlibre-xf86-video-fbdev-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0qafmg0a28sa822xhncg1f5x2w9ya55jix3yyrf3897c820z5z3g"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules")
+              "CFLAGS=-g -O2 -Wno-error=implicit-function-declaration")))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list xlibre-server))
+    (home-page "https://github.com/X11Libre/xf86-video-fbdev")
+    (synopsis "Framebuffer device video driver for XLibre")
+    (description
+     "This package provides a video driver for the Linux framebuffer device
+for the XLibre X server.")
+    (license license:x11)))
