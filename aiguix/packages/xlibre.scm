@@ -698,3 +698,31 @@ chips for the XLibre X server.")
      "This package provides a video driver for Cirrus Logic graphics chips for
 the XLibre X server.")
     (license license:x11)))
+
+(define-public xlibre-video-dummy
+  (package
+    (name "xlibre-video-dummy")
+    (version "25.0.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-video-dummy")
+             (commit (string-append "xlibre-xf86-video-dummy-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "02d612hrljdiyi577718lgyvvb90jph2pi4rvxb7hwfzghialdf7"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules"))))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list xlibre-server))
+    (home-page "https://github.com/X11Libre/xf86-video-dummy")
+    (synopsis "Dummy video driver for XLibre")
+    (description
+     "This package provides a virtual, off-screen frame buffer driver for the
+XLibre X server, for example for remote sessions with xpra.")
+    (license license:x11)))
