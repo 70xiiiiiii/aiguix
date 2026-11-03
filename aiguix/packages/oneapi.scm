@@ -45,7 +45,9 @@
   #:use-module (gnu packages serialization)
   #:use-module (gnu packages video)
   #:use-module (gnu packages web)
-  #:use-module (gnu packages xml))
+  #:use-module (gnu packages xml)
+  #:use-module (aiguix packages cpp)
+  #:use-module (aiguix packages machine-learning))
 
 (define-public openvino
   (package
@@ -257,6 +259,158 @@ PyTorch into its own intermediate representation and runs them on CPUs and
 Intel GPUs.")
     ;; OpenVINO and oneDNN are under the Apache 2.0 license, MLAS under Expat.
     (license (list license:asl2.0 license:expat))))
+
+(define-public openvino-genai
+  (package
+    (name "openvino-genai")
+    ;; Keep in sync with the version of openvino.
+    (version "2026.4.1.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/openvinotoolkit/openvino.genai")
+             (commit version)))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1dzxv2c1lnsrsh0rpb2ab8dx1i0s8pazn7wpv3dgh33p35qg61rn"))))
+    (build-system cmake-build-system)
+    (arguments
+     (list
+      #:build-type "Release"
+      ;; The test suite needs models downloaded from the network; 'check'
+      ;; only checks that the Python module loads.
+      #:configure-flags
+      ;; GGUF support cannot be disabled: some sources include the GGUF
+      ;; headers even with ENABLE_GGUF=OFF.  The GGUF parser is built from
+      ;; this fork of gguf-tools, which has no releases.
+      (let ((gguflib
+             (origin
+               (method git-fetch)
+               (uri (git-reference
+                     (url "https://github.com/Lourdle/gguf-tools")
+                     (commit "bac796ada809ac293e685db59b075971181cb008")))
+               (file-name "openvino-genai-gguflib-checkout")
+               (sha256
+                (base32
+                 "13rqvabaa8p2chk1vv3nfrap3yz8hqzhprzj9wrn5cyq0i6270na")))))
+        #~(list "-DENABLE_PYTHON=ON"
+                ;; openvino-tokenizers is a separate package.
+                "-DBUILD_TOKENIZERS=OFF"
+                ;; These would download xgrammar and the misaki
+                ;; dependencies at build time.
+                "-DENABLE_XGRAMMAR=OFF"
+                "-DENABLE_MISAKI_CPP=OFF"
+                "-DENABLE_JS=OFF"
+                "-DENABLE_SAMPLES=OFF"
+                "-DENABLE_TESTS=OFF"
+                "-DENABLE_TOOLS=OFF"
+                "-DFETCHCONTENT_FULLY_DISCONNECTED=ON"
+                (string-append "-DFETCHCONTENT_SOURCE_DIR_GGUFLIB="
+                               #$gguflib)
+                (string-append "-DFETCHCONTENT_SOURCE_DIR_SAFETENSORS.H="
+                               #$(this-package-input "safetensors-h")
+                               "/include")))
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack 'use-guix-dependencies
+            (lambda _
+              ;; Use nlohmann-json, minja and pybind11 from Guix instead of
+              ;; downloading them.
+              (substitute* "src/cpp/CMakeLists.txt"
+                (("if\\(NOT TARGET nlohmann_json\\)")
+                 (string-append
+                  "find_package(nlohmann_json REQUIRED)\n"
+                  "if(NOT TARGET nlohmann_json::nlohmann_json)"))
+                (("if\\(NOT TARGET minja\\)" all)
+                 (string-append "add_library(minja INTERFACE)\n"
+                                "target_link_libraries(minja INTERFACE"
+                                " nlohmann_json::nlohmann_json)\n"
+                                all)))
+              (substitute* "src/python/CMakeLists.txt"
+                (("if \\(NOT TARGET pybind11::pybind11\\)" all)
+                 (string-append "set(PYBIND11_FINDPYTHON ON)\n"
+                                "find_package(pybind11 REQUIRED)\n"
+                                all)))))
+          (add-after 'unpack 'use-gnu-layout
+            (lambda _
+              ;; Upstream installs into runtime/{lib,bin,include,cmake} and
+              ;; the Python module into python/.
+              (substitute* "src/CMakeLists.txt"
+                (("runtime/lib/\\$\\{ARCH_DIR\\}") "lib")
+                (("runtime/bin/\\$\\{ARCH_DIR\\}") "bin"))
+              (substitute* "src/cpp/CMakeLists.txt"
+                (("runtime/include") "include")
+                (("runtime/cmake") "lib/cmake/OpenVINOGenAI"))
+              (substitute* "src/python/CMakeLists.txt"
+                (("DESTINATION python/openvino_genai")
+                 (string-append
+                  "DESTINATION lib/python"
+                  #$(version-major+minor (package-version python))
+                  "/site-packages/openvino_genai"))
+                ;; libopenvino_genai.so is not next to the Python module.
+                (("set\\(py_rpaths \"\\$ORIGIN\"\\)")
+                 "set(py_rpaths \"${CMAKE_INSTALL_PREFIX}/lib\")"))))
+          (add-after 'unpack 'locate-tokenizers
+            (lambda* (#:key inputs #:allow-other-keys)
+              ;; Upstream expects the tokenizers extension next to
+              ;; libopenvino_genai.so.
+              (substitute* "src/cpp/src/tokenizer/tokenizers_path.cpp"
+                (("return with_openvino_tokenizers\\(get_ov_genai_library.*")
+                 (string-append
+                  "return \""
+                  (search-input-file
+                   inputs
+                   (string-append
+                    "lib/python"
+                    #$(version-major+minor (package-version python))
+                    "/site-packages/openvino_tokenizers/lib"
+                    "/libopenvino_tokenizers.so"))
+                  "\";\n")))))
+          (add-after 'install 'move-documentation
+            (lambda _
+              ;; Upstream installs samples and licenses at the top level.
+              (let ((doc (string-append #$output "/share/doc/"
+                                        #$name "-" #$version)))
+                (mkdir-p doc)
+                (for-each (lambda (directory)
+                            (rename-file
+                             (string-append #$output "/" directory)
+                             (string-append doc "/" directory)))
+                          '("samples" "docs")))))
+          (delete 'check)
+          (add-after 'install 'check
+            (lambda* (#:key tests? #:allow-other-keys)
+              (when tests?
+                (setenv "GUIX_PYTHONPATH"
+                        (string-append
+                         #$output "/lib/python"
+                         #$(version-major+minor (package-version python))
+                         "/site-packages:" (getenv "GUIX_PYTHONPATH")))
+                (invoke "python3" "-c"
+                        (string-append
+                         "import openvino_genai;"
+                         "print(openvino_genai.get_version())"))))))))
+    (native-inputs (list pybind11))
+    (inputs (list minja
+                  nlohmann-json
+                  opencl-clhpp
+                  opencl-headers
+                  opencl-icd-loader
+                  openvino
+                  python
+                  safetensors-h))
+    (propagated-inputs (list openvino-tokenizers python-openvino))
+    (supported-systems '("x86_64-linux"))
+    (home-page "https://github.com/openvinotoolkit/openvino.genai")
+    (synopsis "Generative AI pipelines for OpenVINO")
+    (description
+     "OpenVINO GenAI provides pipelines for generative AI models on top of
+OpenVINO, such as text generation with large language models, visual language
+models, image generation and speech recognition.  It supports speculative
+decoding, including DFlash, and comes with C++ and Python APIs.")
+    (license license:asl2.0)))
+
 
 (define-public openvino-tokenizers
   (package
