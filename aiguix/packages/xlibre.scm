@@ -1498,3 +1498,31 @@ server.")
      "This package provides a video driver for the VMware SVGA virtual
 graphics device for the XLibre X server.")
     (license license:x11)))
+
+(define-public xlibre-video-voodoo
+  (package
+    (name "xlibre-video-voodoo")
+    (version "25.0.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-video-voodoo")
+             (commit (string-append "xlibre-xf86-video-voodoo-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0cc21b9h89v98sm69wz60izan38pm6b933jkaphw051idzr6lrw6"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules"))))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list xlibre-server xorgproto))
+    (home-page "https://github.com/X11Libre/xf86-video-voodoo")
+    (synopsis "Voodoo video driver for XLibre")
+    (description
+     "This package provides a video driver for 3dfx Voodoo and Voodoo2
+graphics cards for the XLibre X server.")
+    (license license:x11)))
