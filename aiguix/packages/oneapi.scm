@@ -286,7 +286,7 @@
     (inputs (list abseil-cpp
                   flatbuffers
                   ittapi
-                  level-zero
+                  level-zero/driver-path
                   libva
                   liburing
                   nlohmann-json
@@ -298,6 +298,11 @@
                   rapidjson
                   snappy
                   xbyak))
+    ;; Let the Level Zero and OpenCL loaders find the drivers, such as
+    ;; intel-compute-runtime, when both are in the same profile.
+    (native-search-paths
+     (append (package-native-search-paths level-zero/driver-path)
+             (package-native-search-paths opencl-icd-loader)))
     (supported-systems '("x86_64-linux"))
     (home-page "https://docs.openvino.ai/")
     (synopsis "Toolkit for optimizing and deploying AI inference")
