@@ -427,3 +427,46 @@ the XLibre X server.")
     (description
      "This package provides a null input driver for the XLibre X server.")
     (license license:x11)))
+
+(define-public xlibre-input-wacom
+  (package
+    (name "xlibre-input-wacom")
+    (version "25.0.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-input-wacom")
+             (commit (string-append "xlibre-xf86-input-wacom-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0k4zwvnwf19ly83x2kvn3fjb8mzf9zk4j93p1rmv5qv66vk27428"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules")
+              (string-append "--with-sdkdir="
+                             #$output "/include/xorg")
+              (string-append "--with-xorg-conf-dir="
+                             #$output "/share/X11/xorg.conf.d"))
+      #:phases
+      #~(modify-phases %standard-phases
+          (replace 'bootstrap
+            (lambda _
+              ;; autogen.sh runs configure unconditionally.
+              (invoke "autoreconf" "-vfi"))))))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list eudev
+                  libx11
+                  libxi
+                  libxinerama
+                  libxrandr
+                  xlibre-server))
+    (home-page "https://github.com/X11Libre/xf86-input-wacom")
+    (synopsis "Wacom tablet input driver for XLibre")
+    (description
+     "This package provides an input driver for Wacom tablets for the XLibre X
+server.")
+    (license license:gpl2+)))
