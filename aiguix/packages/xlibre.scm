@@ -400,3 +400,30 @@ operating systems, such as USB mice.")
      "This package provides an input driver for the VMware virtual mouse for
 the XLibre X server.")
     (license license:x11)))
+
+(define-public xlibre-input-void
+  (package
+    (name "xlibre-input-void")
+    (version "25.0.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-input-void")
+             (commit (string-append "xlibre-xf86-input-void-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1h4fcval1vx9vaj15fjl4nn1zdx5x9ic0dr0y96y5gnrdkc92cxf"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules"))))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list xlibre-server))
+    (home-page "https://github.com/X11Libre/xf86-input-void")
+    (synopsis "Void (null) input driver for XLibre")
+    (description
+     "This package provides a null input driver for the XLibre X server.")
+    (license license:x11)))
