@@ -40,7 +40,9 @@
   #:use-module (guix gexp)
   #:use-module (guix git-download)
   #:use-module ((guix licenses) #:prefix license:)
+  #:use-module (guix build-system gnu)
   #:use-module (guix build-system meson)
+  #:use-module (gnu packages autotools)
   #:use-module (gnu packages compression)
   #:use-module (gnu packages gl)
   #:use-module (gnu packages glib)
@@ -145,4 +147,35 @@ with code cleanups and new features.  It is a drop-in replacement for
 @code{xorg-server}: the X server accepts requests from client programs to
 create windows, which are composed on the screen as directed by the window
 manager.")
+    (license license:x11)))
+
+(define-public xlibre-input-elographics
+  (package
+    (name "xlibre-input-elographics")
+    (version "25.0.1")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-input-elographics")
+             (commit (string-append "xlibre-xf86-input-elographics-"
+                                    version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1wdibgm534g4brfsivyd4x8pqivyfapqvi2dc9n444mv4ynpmf81"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules")
+              (string-append "--with-sdkdir="
+                             #$output "/include/xorg"))))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list xlibre-server))
+    (home-page "https://github.com/X11Libre/xf86-input-elographics")
+    (synopsis "Elographics touchscreen input driver for XLibre")
+    (description
+     "This package provides an input driver for Elographics touchscreens for
+the XLibre X server.")
     (license license:x11)))
