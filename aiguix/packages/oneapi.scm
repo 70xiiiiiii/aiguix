@@ -377,6 +377,91 @@ Intel GPUs and the NPU of Intel CPUs.  On the NPU, it needs
     ;; OpenVINO and oneDNN are under the Apache 2.0 license, MLAS under Expat.
     (license (list license:asl2.0 license:expat))))
 
+(define-public linux-npu-driver
+  (package
+    (name "linux-npu-driver")
+    (version "1.38.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/intel/linux-npu-driver")
+             (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0qf1jh1p2xvxm1zsr0ww8m3svdhg7amdfvh2j3idrh7n6bknnl23"))
+       (modules '((guix build utils)))
+       (snippet
+        ;; Remove the nonfree NPU firmware and the bundled Perfetto SDK.
+        #~(for-each delete-file-recursively
+                    '("firmware/bin" "third_party/perfetto")))))
+    (build-system cmake-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list "-DENABLE_TOOLS_BUILD=ON"
+              ;; The validation tests need a real NPU.
+              "-DENABLE_VALIDATION_BUILD=OFF")
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack 'unpack-npu-compiler-elf
+            (lambda _
+              ;; The ELF library has no install rules and is meant to be
+              ;; built as part of the driver, which also provides the
+              ;; firmware API headers it needs.
+              (copy-recursively
+               #$(this-package-native-input "npu-compiler-elf-checkout")
+               "third_party/npu_compiler_elf")))
+          (add-after 'unpack 'use-system-npu-extensions
+            (lambda* (#:key inputs #:allow-other-keys)
+              (substitute*
+                  "third_party/cmake/level-zero-npu-extensions.cmake"
+                (("\\$\\{CMAKE_CURRENT_SOURCE_DIR\\}/[a-z-]+")
+                 (dirname
+                  (search-input-file inputs
+                                     "include/level_zero/ze_graph_ext.h"))))))
+          (replace 'check
+            (lambda* (#:key tests? #:allow-other-keys)
+              ;; The unit tests use mocks instead of a real NPU.  Skip the
+              ;; suites that need a model or a compiled blob, which the
+              ;; validation tests would download.
+              (when tests?
+                (invoke "bin/npu_shared_tests")
+                (invoke "bin/ze_intel_npu_tests"
+                        (string-append "--gtest_filter=-"
+                                       "CommandListGraphApiTest.*:"
+                                       "CompilerInDriver.*:"
+                                       "GraphExecution.*:"
+                                       "GraphNativeTest.*"))))))))
+    (native-inputs
+     (list googletest
+           (origin
+             (method git-fetch)
+             (uri (git-reference
+                   (url "https://github.com/openvinotoolkit/npu_compiler_elf")
+                   (commit "d325f45f2cb405b5fa2ff17a30de9469f1641b73")))
+             (file-name "npu-compiler-elf-checkout")
+             (sha256
+              (base32
+               "0xbaxxn45q662khma8kcs1s0hnl9l58ylcav30a16mvjjjkyx4cf")))
+           pkg-config))
+    ;; The driver implements the Level Zero 1.32 interface.
+    (inputs (list level-zero-1.32.0 level-zero-npu-extensions yaml-cpp))
+    (supported-systems '("x86_64-linux"))
+    (home-page "https://github.com/intel/linux-npu-driver")
+    (synopsis "User-space driver for the NPU of Intel CPUs")
+    (description
+     "This package provides the Level Zero driver for the neural processing
+unit (NPU) of Intel Core Ultra CPUs, which lets programs such as OpenVINO run
+inference on it through the @code{intel_vpu} kernel driver.  It also provides
+@command{intel-npu-smi}, which shows the use and frequency of the NPU.  The
+NPU firmware is not part of this package.  To compile models, the driver
+needs the NPU compiler, a separate package, installed in the same profile;
+without it, the driver can only run models compiled beforehand.  For users
+to access the NPU, add @code{npu-service-type} from @code{(aiguix services
+npu)} to the @code{operating-system} configuration.")
+    (license license:expat)))
+
 (define-public openvino-genai
   (package
     (name "openvino-genai")
