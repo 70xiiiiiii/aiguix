@@ -640,3 +640,32 @@ chips for the XLibre X server.")
      "This package provides a video driver for ATI Radeon graphics cards
 supported by the radeon kernel driver, for the XLibre X server.")
     (license license:x11)))
+
+(define-public xlibre-video-chips
+  (package
+    (name "xlibre-video-chips")
+    (version "25.0.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-video-chips")
+             (commit (string-append "xlibre-xf86-video-chips-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0d1aakb1qq93w10aa8zip4z2imbgww5mw0jryr0c4if67w3zmwpm"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules")
+              "CFLAGS=-g -O2 -Wno-error=implicit-function-declaration")))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list xlibre-server))
+    (home-page "https://github.com/X11Libre/xf86-video-chips")
+    (synopsis "Chips and Technologies video driver for XLibre")
+    (description
+     "This package provides a video driver for Chips and Technologies graphics
+chips for the XLibre X server.")
+    (license license:x11)))
