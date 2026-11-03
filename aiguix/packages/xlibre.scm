@@ -212,3 +212,33 @@ the XLibre X server.")
 server.  It supports all input devices that the kernel knows about, including
 most mice, keyboards, tablets and touchscreens.")
     (license license:x11)))
+
+(define-public xlibre-input-joystick
+  (package
+    (name "xlibre-input-joystick")
+    (version "25.0.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-input-joystick")
+             (commit (string-append "xlibre-xf86-input-joystick-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0rnwr6rg4swv2cannw9j6rj32nf1a069bqvwi7rm842vm59l27iw"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules")
+              (string-append "--with-sdkdir="
+                             #$output "/include/xorg"))))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list xlibre-server))
+    (home-page "https://github.com/X11Libre/xf86-input-joystick")
+    (synopsis "Joystick input driver for XLibre")
+    (description
+     "This package provides a joystick input driver for the XLibre X
+server.  It is used to control the pointer with a joystick device.")
+    (license license:x11)))
