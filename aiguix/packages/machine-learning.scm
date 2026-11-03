@@ -27,9 +27,19 @@
 (define-module (aiguix packages machine-learning)
   #:use-module (guix packages)
   #:use-module (guix gexp)
+  #:use-module (guix download)
   #:use-module (guix build-system cargo)
   #:use-module (guix build-system pyproject)
-  #:use-module ((gnu packages machine-learning) #:prefix guix:))
+  #:use-module (gnu packages check)
+  #:use-module (gnu packages python-build)
+  #:use-module ((gnu packages python-web)
+                #:select (python-fastapi
+                          python-openai
+                          python-starlette
+                          python-uvicorn))
+  #:use-module (gnu packages python-xyz)
+  #:use-module ((gnu packages machine-learning) #:prefix guix:)
+  #:use-module (aiguix packages python-web))
 
 (define-public python-safetensors
   (package
@@ -62,3 +72,55 @@
                "safetensors"))))))
     (inputs (cargo-inputs 'python-safetensors
                           #:module '(aiguix packages rust-crates)))))
+
+(define-public python-transformers
+  (package
+    (inherit guix:python-transformers)
+    (version "5.15.1")
+    (source
+     (origin
+       (method url-fetch)
+       (uri (pypi-uri "transformers" version))
+       (sha256
+        (base32 "1xw2libx4zsxvgh7g97w3dhmz90yr3yhsngq80nwipbmj2yrdj97"))))
+    (arguments
+     ;; Missing inputs.
+     (list #:test-flags
+           '(list "--ignore=tests/test_modeling_tf_common.py"
+                  "--ignore=tests/test_modeling_common.py"  ; ImportError
+                  "--ignore=tests/test_processing_common.py"  ; ImportError
+                  "--ignore=tests/test_configuration_common.py"
+                  "--ignore=tests/test_pipeline_mixin.py"
+                  "--ignore=tests/test_sequence_feature_extraction_common.py"
+                  "--ignore=tests/test_tokenization_mistral_common.py"
+                  ;; Relative imports, only usable from the full test suite.
+                  "--ignore=tests/test_tokenization_common.py"
+                  ;; Imports a CI helper that is not in the release.
+                  "--ignore=tests/test_image_processing_common.py"
+                  ;; Requires python-accelerate
+                  "--ignore=tests/test_training_args.py"
+                  ;; Requires network access
+                  "--ignore=tests/test_executorch.py")))
+    (propagated-inputs
+     (list python-fastapi               ;the CLI needs the "serving" extras
+           python-huggingface-hub
+           python-numpy
+           python-openai
+           python-packaging
+           python-pydantic
+           guix:python-pytorch
+           python-pyyaml
+           python-regex
+           python-rich
+           python-safetensors
+           python-starlette
+           guix:python-tokenizers
+           python-tqdm
+           python-typer
+           python-uvicorn))
+    (native-inputs
+     (list python-parameterized
+           python-pytest
+           python-pytest-asyncio
+           python-setuptools
+           guix:python-torchvision))))
