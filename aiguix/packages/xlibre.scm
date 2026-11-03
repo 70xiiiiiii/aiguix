@@ -366,3 +366,37 @@ operating systems, such as USB mice.")
     (description
      "This package provides a touchpad input driver for the XLibre X server.")
     (license license:x11)))
+
+(define-public xlibre-input-vmmouse
+  (package
+    (name "xlibre-input-vmmouse")
+    (version "25.0.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-input-vmmouse")
+             (commit (string-append "xlibre-xf86-input-vmmouse-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0jrlvqr5dhpxjdgl09cyik86spg533p09s54484dd0m48zr30ij1"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules")
+              (string-append "--with-xorg-conf-dir="
+                             #$output "/share/X11/xorg.conf.d"))))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list eudev xlibre-server))
+    (supported-systems (filter (lambda (system)
+                                 (or (string-prefix? "i686-" system)
+                                     (string-prefix? "x86_64-" system)))
+                               %supported-systems))
+    (home-page "https://github.com/X11Libre/xf86-input-vmmouse")
+    (synopsis "VMware mouse input driver for XLibre")
+    (description
+     "This package provides an input driver for the VMware virtual mouse for
+the XLibre X server.")
+    (license license:x11)))
