@@ -25,15 +25,19 @@
 
 (define-module (aiguix packages oneapi)
   #:use-module (guix build-system cmake)
+  #:use-module (guix build-system pyproject)
   #:use-module (guix gexp)
   #:use-module (guix git-download)
   #:use-module ((guix licenses) #:prefix license:)
   #:use-module (guix packages)
   #:use-module (guix utils)
+  #:use-module (gnu packages check)
   #:use-module (gnu packages compression)
   #:use-module (gnu packages cpp)
+  #:use-module (gnu packages graphviz)
   #:use-module (gnu packages linux)
-  #:use-module ((gnu packages machine-learning) #:select (sentencepiece))
+  #:use-module ((gnu packages machine-learning)
+                #:select (python-scikit-learn sentencepiece))
   #:use-module (gnu packages oneapi)
   #:use-module (gnu packages opencl)
   #:use-module (gnu packages pcre)
@@ -41,6 +45,8 @@
   #:use-module (gnu packages profiling)
   #:use-module (gnu packages protobuf)
   #:use-module (gnu packages python)
+  #:use-module (gnu packages python-build)
+  #:use-module (gnu packages python-science)
   #:use-module (gnu packages python-xyz)
   #:use-module (gnu packages serialization)
   #:use-module (gnu packages video)
@@ -519,6 +525,71 @@ that the tokenizers and detokenizers of Hugging Face models can run as
 OpenVINO models.  It consists of an OpenVINO extension library and a Python
 module to load it and to convert tokenizers.")
     ;; The extension bundles SentencePiece, also under the Apache 2.0 license.
+    (license license:asl2.0)))
+
+(define-public python-nncf
+  (package
+    (name "python-nncf")
+    (version "3.4.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/openvinotoolkit/nncf")
+             (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1skywpnwdnvnhw01wq8843l5sykxj8ma9li4zp7vjkp6n62jghiy"))))
+    (build-system pyproject-build-system)
+    (arguments
+     (list
+      ;; The backend tests need timm and models from the network.
+      #:test-flags
+      #~(list "tests/common" "-k"
+              (string-join
+               (list
+                ;; networkx 3.4.2 cannot read DOT files with pydot 4.
+                "not test_read_dot_file_gives_graph_with_colons"
+                "not test_find_constant_subgraphs"
+                "not test_remove_noop_operation_nodes"
+                ;; openvino-telemetry is not packaged.
+                "not test_telemetry_is_not_mocked_in_normal_conditions")
+               " and "))
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack 'relax-requirements
+            (lambda _
+              ;; openvino-telemetry is imported optionally, with a stub as
+              ;; fallback.  The ninja Python module is never imported; PyTorch
+              ;; extensions only need the ninja command.
+              (substitute* "pyproject.toml"
+                ((".*\"(ninja|openvino-telemetry)[<>=].*") ""))))
+          (add-before 'build 'set-version
+            (lambda _
+              ;; Otherwise the version is extended with the Git commit.
+              (setenv "NNCF_RELEASE_BUILD" "1"))))))
+    (propagated-inputs
+     (list python-networkx
+           python-numpy
+           python-packaging
+           python-psutil
+           python-pydot
+           python-rich
+           python-safetensors
+           python-scikit-learn
+           python-scipy
+           python-tabulate))
+    (native-inputs
+     (list python-pytest
+           python-pytest-mock
+           python-setuptools))
+    (home-page "https://github.com/openvinotoolkit/nncf")
+    (synopsis "Neural network compression framework")
+    (description
+     "NNCF provides algorithms for optimizing the inference of neural
+networks, such as post-training quantization, weight compression and
+quantization-aware training.  It supports models of OpenVINO, PyTorch and
+ONNX.")
     (license license:asl2.0)))
 
 (define-public python-openvino
