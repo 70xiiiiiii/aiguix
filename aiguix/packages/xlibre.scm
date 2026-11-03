@@ -1210,3 +1210,33 @@ XLibre X server.")
      "This package provides a video driver for S3 Savage graphics chips for
 the XLibre X server.")
     (license license:x11)))
+
+(define-public xlibre-video-siliconmotion
+  (package
+    (name "xlibre-video-siliconmotion")
+    (version "25.0.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-video-siliconmotion")
+             (commit (string-append "xlibre-xf86-video-siliconmotion-"
+                                    version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1kw5yas828mwn3pqbz5s7b9kccv0z6iz0s5qr24qrbhrqa56b4dz"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules")
+              "CFLAGS=-g -O2 -Wno-error=implicit-function-declaration")))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list xlibre-server))
+    (home-page "https://github.com/X11Libre/xf86-video-siliconmotion")
+    (synopsis "Silicon Motion video driver for XLibre")
+    (description
+     "This package provides a video driver for Silicon Motion graphics chips
+for the XLibre X server.")
+    (license license:x11)))
