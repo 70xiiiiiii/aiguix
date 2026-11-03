@@ -1526,3 +1526,41 @@ graphics device for the XLibre X server.")
      "This package provides a video driver for 3dfx Voodoo and Voodoo2
 graphics cards for the XLibre X server.")
     (license license:x11)))
+
+(define-public xlibre-video-xgi
+  (package
+    (name "xlibre-video-xgi")
+    (version "25.0.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-video-xgi")
+             (commit (string-append "xlibre-xf86-video-xgi-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0218rp9incivi85p62y7zd91kdhycl85p73lz7prmrkp2ncim055"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules")
+              (string-append "CFLAGS=-g -O2"
+                             " -Wno-error=implicit-function-declaration"
+                             " -Wno-error=incompatible-pointer-types"
+                             " -Wno-error=int-conversion"))
+      #:phases
+      #~(modify-phases %standard-phases
+          (replace 'bootstrap
+            (lambda _
+              ;; autogen.sh runs configure unconditionally.
+              (invoke "autoreconf" "-vfi"))))))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list mesa xlibre-server xorgproto))
+    (home-page "https://github.com/X11Libre/xf86-video-xgi")
+    (synopsis "XGI video driver for XLibre")
+    (description
+     "This package provides a video driver for XGI graphics chips for the
+XLibre X server.")
+    (license license:bsd-3)))
