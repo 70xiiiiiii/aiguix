@@ -44,6 +44,8 @@ humans who work with them. What the channel is for is in the
 
 - Modules live in `aiguix/packages/<topic>.scm` as
   `(aiguix packages <topic>)`.
+- Within a module, a package that the others build on comes first (for
+  example `xlibre-server`); the rest are sorted by name.
 - The file `.guix-channel` marks the repository as a channel.
 
 ## Checking a package
