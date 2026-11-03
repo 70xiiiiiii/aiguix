@@ -31,20 +31,27 @@
   #:use-module ((guix licenses) #:prefix license:)
   #:use-module (guix packages)
   #:use-module (guix utils)
+  #:use-module (gnu packages algebra)
   #:use-module (gnu packages check)
   #:use-module (gnu packages compression)
   #:use-module (gnu packages cpp)
+  #:use-module (gnu packages curl)
+  #:use-module (gnu packages dns)
   #:use-module (gnu packages graphviz)
+  #:use-module (gnu packages image-processing)
   #:use-module (gnu packages linux)
+  #:use-module (gnu packages logging)
   #:use-module ((gnu packages machine-learning)
                 #:select (python-pytorch
                           python-scikit-learn
                           python-torchvision
-                          sentencepiece))
+                          sentencepiece
+                          tensorflow-lite))
   #:use-module (gnu packages oneapi)
   #:use-module (gnu packages opencl)
   #:use-module (gnu packages pcre)
   #:use-module (gnu packages pkg-config)
+  #:use-module (gnu packages pretty-print)
   #:use-module (gnu packages profiling)
   #:use-module (gnu packages protobuf)
   #:use-module (gnu packages python)
@@ -52,13 +59,21 @@
   #:use-module (gnu packages python-science)
   #:use-module ((gnu packages python-web) #:select (python-requests))
   #:use-module (gnu packages python-xyz)
+  #:use-module (gnu packages regex)
   #:use-module (gnu packages serialization)
+  #:use-module (gnu packages stb)
+  #:use-module (gnu packages tls)
   #:use-module (gnu packages video)
   #:use-module (gnu packages web)
   #:use-module (gnu packages xml)
+  #:use-module (aiguix packages audio)
   #:use-module (aiguix packages cpp)
   #:use-module (aiguix packages machine-learning)
-  #:use-module (aiguix packages python-web))
+  #:use-module (aiguix packages monitoring)
+  #:use-module (aiguix packages python-web)
+  #:use-module (aiguix packages rpc)
+  #:use-module (aiguix packages version-control)
+  #:use-module (aiguix packages web))
 
 (define-public openvino
   (package
@@ -530,6 +545,197 @@ that the tokenizers and detokenizers of Hugging Face models can run as
 OpenVINO models.  It consists of an OpenVINO extension library and a Python
 module to load it and to convert tokenizers.")
     ;; The extension bundles SentencePiece, also under the Apache 2.0 license.
+    (license license:asl2.0)))
+
+(define-public ovms
+  (package
+    (name "ovms")
+    ;; Keep in sync with the version of openvino.
+    (version "2026.4.1")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/openvinotoolkit/model_server")
+             (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0gy0p0ysvw7ii276m5c1s0x3s36f9bv3xh9d8qj36jqj7q5ynyn2"))))
+    (build-system cmake-build-system)
+    (arguments
+     (list
+      #:build-type "Release"
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack 'add-cmake-build
+            ;; Upstream builds with Bazel; this CMake file builds the same
+            ;; configuration, without Python and cloud storage.
+            (lambda _
+              (copy-file #$(local-file "../../aux-files/ovms/CMakeLists.txt")
+                         "CMakeLists.txt")))
+          (add-after 'unpack 'unpack-mediapipe
+            ;; OVMS' fork of MediaPipe; only the framework and the core
+            ;; calculators are built.
+            (lambda _
+              (copy-recursively
+               #$(origin
+                   (method git-fetch)
+                   (uri (git-reference
+                         (url "https://github.com/openvinotoolkit/mediapipe")
+                         (commit "12e8d511cfbc5f471c498278a65a02dd250963e8")))
+                   (file-name "ovms-mediapipe-checkout")
+                   (sha256
+                    (base32
+                     "05zlwlpa5wz3sw1c02pgl9vhiwp68pday71glm2xldp1ykzry379")))
+               "mediapipe")
+              (for-each make-file-writable
+                        (find-files "mediapipe" #:directories? #t))))
+          (add-after 'unpack-mediapipe 'adjust-mediapipe
+            (lambda _
+              (with-directory-excursion "mediapipe/mediapipe/framework"
+                ;; Formerly included through the Protobuf 3 headers.
+                (substitute* "deps/re2.h"
+                  (("^#include <regex>" all)
+                   (string-append "#include <mutex>\n" all)))
+                ;; Protobuf 6 API.
+                (substitute* "tool/template_parser.cc"
+                  (("error_collector_->Add(Error|Warning)\\(" _ kind)
+                   (string-append "error_collector_->Record" kind "("))
+                  (("virtual void Add(Error|Warning)\\(int line, int column, \
+const std::string& message\\)" _ kind)
+                   (string-append "void Record" kind "(int line, int column, "
+                                  "absl::string_view message) override"))
+                  (("reflection->SupportsUnknownEnumValues\\(\\)")
+                   "!field->legacy_enum_field_treated_as_closed()")
+                  ;; Internal to Protobuf 6 and not exported by it.
+                  (("^using proto_ns::internal::GetAnyFieldDescriptors;")
+                   "\
+inline bool GetAnyFieldDescriptors(const proto_ns::Message& message,
+                                   const proto_ns::FieldDescriptor** type_url,
+                                   const proto_ns::FieldDescriptor** value) {
+  const proto_ns::Descriptor* descriptor = message.GetDescriptor();
+  if (descriptor->full_name() != \"google.protobuf.Any\") return false;
+  *type_url = descriptor->FindFieldByNumber(1);
+  *value = descriptor->FindFieldByNumber(2);
+  return *type_url != nullptr &&
+         (*type_url)->type() == proto_ns::FieldDescriptor::TYPE_STRING &&
+         *value != nullptr &&
+         (*value)->type() == proto_ns::FieldDescriptor::TYPE_BYTES;
+}")))))
+          (add-after 'unpack 'adjust-sources
+            (lambda _
+              (with-directory-excursion "src"
+                (substitute* "version.hpp"
+                  (("REPLACE_PROJECT_VERSION") #$version)
+                  (("REPLACE_BAZEL_BUILD_FLAGS") "none (CMake build)"))
+                ;; Protobuf 6 API.
+                (substitute* "http_rest_api_handler.cpp"
+                  (("google::protobuf::util::Status status")
+                   "absl::Status status")
+                  (("always_print_primitive_fields")
+                   "always_print_fields_with_no_presence"))
+                ;; Abseil's inline namespace breaks this forward declaration.
+                (substitute* "audio/speech_to_text/s2t_servable.hpp"
+                  (("^namespace absl \\{\n") "")
+                  (("^class Status;\n")
+                   "#include \"absl/status/status.h\"\n")
+                  (("^\\}  // namespace absl\n") ""))
+                ;; Bazel provided it indirectly.
+                (substitute* "schema.cpp"
+                  (("^#include <utility>" all)
+                   (string-append all "\n#include <sys/stat.h>")))
+                ;; Unused header from model_api, which is not packaged.
+                (substitute* '("embeddings/embeddings_calculator_ov.cc"
+                               "rerank/rerank_calculator_ov.cc")
+                  (("^#include <adapters/inference_adapter.h>") ""))
+                ;; Make TensorFlow tensors in MediaPipe graphs optional, as
+                ;; there is no TensorFlow library to build against.
+                (substitute* "kfs_frontend/kfs_graph_executor_impl.cpp"
+                  (("^#include \"\\.\\./tensorflow_type_utils\\.hpp\"\n" all)
+                   (string-append "#if (TFTENSOR_DISABLE == 0)\n" all
+                                  "#endif\n"))
+                  ;; Only after 'template <>', which the next specialization
+                  ;; then uses.
+                  (("^Status receiveAndSerializePacket<tensorflow::Tensor>"
+                    all)
+                   (string-append "#if (TFTENSOR_DISABLE == 0)\n" all))
+                  (("^Status receiveAndSerializePacket<::mediapipe::Tensor>"
+                    all)
+                   (string-append "#endif\n" all))
+                  (("^static Status deserializeTensor\\(.*\
+std::unique_ptr<tensorflow::Tensor>" all)
+                   (string-append "#if (TFTENSOR_DISABLE == 0)\n" all))
+                  (("^static Status deserializeTensor\\(.*\
+std::unique_ptr<ov::Tensor>" all)
+                   (string-append "#endif\n" all))
+                  (("^( *)status = [a-zA-Z]+<tensorflow::Tensor.*\n"
+                    all indent)
+                   (string-append
+                    "#if (TFTENSOR_DISABLE == 0)\n" all "#else\n"
+                    indent "status = Status(StatusCode::NOT_IMPLEMENTED,\n"
+                    indent "    \"TensorFlow tensors are disabled\");\n"
+                    "#endif\n"))))))
+          (add-after 'adjust-sources 'locate-tokenizers
+            (lambda _
+              (let ((tokenizers #$(this-package-input "openvino-tokenizers")))
+                (substitute* "src/servable_management/modelmanager.cpp"
+                  (("\"libopenvino_tokenizers\\.so\"")
+                   (string-append
+                    "\""
+                    (car (find-files tokenizers
+                                     "^libopenvino_tokenizers\\.so$"))
+                    "\""))))))
+          (replace 'check
+            ;; The test suite needs Bazel, test models and network access.
+            (lambda* (#:key tests? #:allow-other-keys)
+              (when tests?
+                (invoke "./ovms" "--version")))))))
+    (native-inputs (list pkg-config))
+    (inputs (list abseil-cpp
+                  brotli
+                  c-ares
+                  cpp-httplib
+                  curl
+                  cxxopts
+                  dr-libs
+                  drogon-for-ovms
+                  eigen
+                  flatbuffers-23.5
+                  fmt
+                  glog
+                  grpc
+                  libgit2-for-ovms
+                  libva
+                  minitrace
+                  nlohmann-json
+                  opencl-clhpp
+                  opencl-headers
+                  opencl-icd-loader
+                  opencv
+                  openssl
+                  openvino
+                  openvino-genai
+                  openvino-tokenizers
+                  prometheus-cpp
+                  protobuf-6
+                  rapidjson
+                  re2-next
+                  spdlog
+                  stb-image
+                  stb-image-write
+                  tensorflow-lite
+                  (list util-linux "lib")
+                  zlib))
+    (supported-systems '("x86_64-linux"))
+    (home-page "https://github.com/openvinotoolkit/model_server")
+    (synopsis "Inference server for OpenVINO models")
+    (description
+     "OpenVINO Model Server (OVMS) serves models optimized with OpenVINO over
+the KServe gRPC and REST APIs and over OpenAI-compatible endpoints for chat
+and text completions, embeddings, reranking, image generation and speech.
+Pipelines are described as MediaPipe graphs.  It can pull models from Hugging
+Face.  This package is built without Python nodes and without cloud
+storage.")
     (license license:asl2.0)))
 
 (define-public python-nncf
