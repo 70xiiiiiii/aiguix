@@ -67,9 +67,24 @@ guix style -L . <package>
 
 ## Commits and pushes
 
-- **One commit, one file, one definition.** A commit changes exactly one
-  file and adds or changes exactly one `define` or `define-public`. A new
-  module file comes with the commit of its first definition.
+- **One commit, one definition, as in Guix.** A commit adds or changes
+  exactly one `define` or `define-public`. It also carries the files that
+  belong to that package, and nothing else: a new module file comes with
+  its first definition, and a package comes with its patch, its file in
+  `aux-files/<package>/` and its crates.
+- **Rust crates.** The crates of a Rust package live in
+  `aiguix/packages/rust-crates.scm`, as in Guix. The commit that adds or
+  updates the package also adds the crates it needs and its entry in
+  `lookup-cargo-inputs` there. Generate both from the package's
+  `Cargo.lock`:
+
+  ```sh
+  guix import crate --lockfile=Cargo.lock <package> \
+    --insert=aiguix/packages/rust-crates.scm
+  ```
+
+  The package takes them with
+  `(cargo-inputs '<package> #:module '(aiguix packages rust-crates))`.
 - **A push may hold a series.** Several such commits can go out in one
   push, as in Guix. Dependencies come first, and every commit in the
   series builds on its own.
