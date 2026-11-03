@@ -972,3 +972,31 @@ XLibre X server.")
      "This package provides a video driver for NeoMagic graphics chips for the
 XLibre X server.")
     (license license:x11)))
+
+(define-public xlibre-video-nested
+  (package
+    (name "xlibre-video-nested")
+    (version "25.0.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-video-nested")
+             (commit (string-append "xlibre-xf86-video-nested-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1j3qnpw3inwbdgkgqb19d3rkmai3r6fvwix0bblgqpms871siy8q"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules"))))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list libx11 libxext xlibre-server))
+    (home-page "https://github.com/X11Libre/xf86-video-nested")
+    (synopsis "Nested video driver for XLibre")
+    (description
+     "This package provides a video driver that runs the XLibre X server
+inside a window of another X server.")
+    (license license:x11)))
