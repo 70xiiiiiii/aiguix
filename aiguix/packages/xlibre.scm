@@ -1123,3 +1123,32 @@ device for the XLibre X server.")
      "This package provides a video driver for ATI Rage 128 graphics cards for
 the XLibre X server.")
     (license license:x11)))
+
+(define-public xlibre-video-rendition
+  (package
+    (name "xlibre-video-rendition")
+    (version "25.0.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-video-rendition")
+             (commit (string-append "xlibre-xf86-video-rendition-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1m3akzqqzbx0jb6ppxsa8wd41f7v7dln4wwhha7f89ra8g28z5bh"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules")
+              "CFLAGS=-g -O2 -Wno-error=implicit-function-declaration")))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list xlibre-server))
+    (home-page "https://github.com/X11Libre/xf86-video-rendition")
+    (synopsis "Rendition video driver for XLibre")
+    (description
+     "This package provides a video driver for Rendition Verite graphics chips
+for the XLibre X server.")
+    (license license:x11)))
