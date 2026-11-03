@@ -609,3 +609,34 @@ the XLibre X server.")
      "This package provides a video driver for ASpeed Technologies graphics
 chips for the XLibre X server.")
     (license license:x11)))
+
+(define-public xlibre-video-ati
+  (package
+    (name "xlibre-video-ati")
+    (version "25.0.1")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-video-ati")
+             (commit (string-append "xlibre-xf86-video-ati-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "04nybnikr3xkc6fwgiwh95y8xb89z7bnynyssim5x4zz37zg679x"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules")
+              (string-append "--with-xorg-conf-dir="
+                             #$output "/share/X11/xorg.conf.d")
+              "CFLAGS=-g -O2 -Wno-error=implicit-function-declaration")))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list eudev mesa xlibre-server xorgproto))
+    (home-page "https://github.com/X11Libre/xf86-video-ati")
+    (synopsis "ATI Radeon video driver for XLibre")
+    (description
+     "This package provides a video driver for ATI Radeon graphics cards
+supported by the radeon kernel driver, for the XLibre X server.")
+    (license license:x11)))
