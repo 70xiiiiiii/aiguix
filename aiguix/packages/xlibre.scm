@@ -335,3 +335,34 @@ that libinput supports and does little beyond.")
 supports serial, bus and PS/2 mice, and mouse types supported by specific
 operating systems, such as USB mice.")
     (license license:x11)))
+
+(define-public xlibre-input-synaptics
+  (package
+    (name "xlibre-input-synaptics")
+    (version "25.0.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-input-synaptics")
+             (commit (string-append "xlibre-xf86-input-synaptics-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "00zasb9g4n7vs4drvw3aprfdzrjxkhdl3mgkds6l70hdydmhjm4r"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules")
+              (string-append "--with-sdkdir="
+                             #$output "/include/xorg")
+              (string-append "--with-xorg-conf-dir="
+                             #$output "/share/X11/xorg.conf.d"))))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list libevdev libx11 libxi mtdev xlibre-server))
+    (home-page "https://github.com/X11Libre/xf86-input-synaptics")
+    (synopsis "Touchpad input driver for XLibre")
+    (description
+     "This package provides a touchpad input driver for the XLibre X server.")
+    (license license:x11)))
