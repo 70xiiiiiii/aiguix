@@ -1000,3 +1000,32 @@ XLibre X server.")
      "This package provides a video driver that runs the XLibre X server
 inside a window of another X server.")
     (license license:x11)))
+
+(define-public xlibre-video-nouveau
+  (package
+    (name "xlibre-video-nouveau")
+    (version "25.0.1")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-video-nouveau")
+             (commit (string-append "xlibre-xf86-video-nouveau-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1n10pwfdf2b7in2qhk7xk6padd2mikf0blxhjr9gswm1v95c1sah"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules")
+              "CFLAGS=-g -O2 -Wno-error=implicit-function-declaration")))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list eudev xlibre-server))
+    (home-page "https://github.com/X11Libre/xf86-video-nouveau")
+    (synopsis "NVIDIA video driver for XLibre")
+    (description
+     "This package provides a video driver for NVIDIA graphics cards supported
+by the nouveau kernel driver, for the XLibre X server.")
+    (license license:x11)))
