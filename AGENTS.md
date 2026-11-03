@@ -1,0 +1,92 @@
+# Rules for adding packages to aiguix
+
+These rules are for anyone who adds packages here: AI agents and the
+humans who work with them. What the channel is for is in the
+[README](README.md).
+
+## What belongs here
+
+- Free software only. Nonfree software goes to
+  [nonguix](https://gitlab.com/nonguix/nonguix).
+- Packages written by or with AI.
+- A package leaves this channel once Guix has a compatible version.
+
+## Writing a package
+
+1. **Package dependencies separately.** A dependency that is its own
+   upstream project becomes its own package; do not bundle it. Code may
+   stay bundled only if it is a fork with project-specific patches or has
+   no upstream of its own. Say why in the commit message.
+2. **Use what Guix has.** Take the Guix package if it exists. A newer
+   version than the one upstream asks for is fine if the build and the
+   tests pass with it.
+3. **No version variants.** Do not add `foo-1.22` next to `foo` just for
+   one package. If the Guix version is too old, define the newer version
+   here by inheriting from the Guix package, and offer the update to Guix.
+4. **Change sources in the package definition.** Use `substitute*` in a
+   build phase or a `snippet` in the `origin`. No patch files. A build
+   file that replaces the upstream build system (for example CMake instead
+   of Bazel) goes into `aux-files/<package>/`. Say why in the commit
+   message.
+5. **Keep single-use things inside the package.** A source used by one
+   package only is an `origin` inside it, not a separate definition.
+   Avoid helper variables.
+6. **Gexp style.** A `let` used only inside a gexp goes inside the
+   `#~(...)`. Use `#$` once, where the name is bound, then use the plain
+   name:
+
+   ```scheme
+   #~(let ((lld #$(this-package-native-input "lld")))
+       (string-append "-fuse-ld=" lld "/bin/ld.lld"))
+   ```
+
+## Layout
+
+- Modules live in `aiguix/packages/<topic>.scm` as
+  `(aiguix packages <topic>)`.
+- The file `.guix-channel` marks the repository as a channel.
+
+## Checking a package
+
+Run these in the repository root before you commit:
+
+```sh
+guix build -L . <package>
+guix lint -L . <package>
+guix style -L . <package>
+```
+
+- The build succeeds and the test suite passes. Disabling a test needs a
+  reason in the commit message.
+- `guix lint` shows no errors. If it fails because of the network, use
+  `guix lint -L . -x cve,archival <package>`.
+- Lines are at most 78 characters. If `guix style` makes a line longer,
+  format it by hand.
+
+## Commits and pushes
+
+- **One push, one commit, one file.** Each push adds exactly one commit,
+  and that commit changes exactly one file.
+- **One definition per commit.** A commit adds or changes exactly one
+  `define` or `define-public`. A new module file comes with the commit of
+  its first definition.
+- **Dependencies first.** Every commit builds on its own.
+- **Messages in Guix style:**
+
+  ```
+  aiguix: Add xlibre-server.
+
+  * aiguix/packages/xlibre.scm (xlibre-server): New variable.
+
+  Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+  ```
+
+  For an update: `aiguix: <name>: Update to <version>.` For other
+  changes: `aiguix: <name>: <what changed>.`
+- **Always add the trailer.** `Co-Authored-By:` names the AI model that
+  took part.
+- **Fix before pushing, never after.** Before the push, fold a correction
+  into the commit with `git commit --amend`. Pushed commits are never
+  rewritten: no rebase, no force push, no merge commits.
+- **A human pushes.** An agent prepares the commit; a human reads it with
+  `git show` and pushes it.
