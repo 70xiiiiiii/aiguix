@@ -1464,3 +1464,37 @@ device for the XLibre X server.")
      "This package provides a generic VESA video driver for the XLibre X
 server.")
     (license license:x11)))
+
+(define-public xlibre-video-vmware
+  (package
+    (name "xlibre-video-vmware")
+    (version "25.0.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-video-vmware")
+             (commit (string-append "xlibre-xf86-video-vmware-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1z4vm5nc1h4xm5y7lwfqh2bfrb73n44wb6kir08ln54cbh8dbhml"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules"))))
+    (native-inputs (list autoconf
+                         automake
+                         eudev
+                         libtool
+                         pkg-config
+                         util-macros))
+    (inputs (list libx11 libxext mesa xlibre-server))
+    (supported-systems (list "x86_64-linux" "i686-linux"))
+    (home-page "https://github.com/X11Libre/xf86-video-vmware")
+    (synopsis "VMware SVGA video driver for XLibre")
+    (description
+     "This package provides a video driver for the VMware SVGA virtual
+graphics device for the XLibre X server.")
+    (license license:x11)))
