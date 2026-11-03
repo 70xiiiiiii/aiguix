@@ -179,3 +179,36 @@ manager.")
      "This package provides an input driver for Elographics touchscreens for
 the XLibre X server.")
     (license license:x11)))
+
+(define-public xlibre-input-evdev
+  (package
+    (name "xlibre-input-evdev")
+    (version "25.0.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-input-evdev")
+             (commit (string-append "xlibre-xf86-input-evdev-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1hcac307kx9agj2c64k62zhhs9bz84qfj8pzybxnyqmbdvcpdrsr"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules")
+              (string-append "--with-sdkdir="
+                             #$output "/include/xorg")
+              (string-append "--with-xorg-conf-dir="
+                             #$output "/share/X11/xorg.conf.d"))))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list eudev libevdev mtdev xlibre-server))
+    (home-page "https://github.com/X11Libre/xf86-input-evdev")
+    (synopsis "Generic input driver for XLibre")
+    (description
+     "This package provides a generic input driver for the XLibre X
+server.  It supports all input devices that the kernel knows about, including
+most mice, keyboards, tablets and touchscreens.")
+    (license license:x11)))
