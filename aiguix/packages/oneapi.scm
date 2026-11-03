@@ -33,8 +33,10 @@
   #:use-module (gnu packages compression)
   #:use-module (gnu packages cpp)
   #:use-module (gnu packages linux)
+  #:use-module ((gnu packages machine-learning) #:select (sentencepiece))
   #:use-module (gnu packages oneapi)
   #:use-module (gnu packages opencl)
+  #:use-module (gnu packages pcre)
   #:use-module (gnu packages pkg-config)
   #:use-module (gnu packages profiling)
   #:use-module (gnu packages protobuf)
@@ -255,6 +257,115 @@ PyTorch into its own intermediate representation and runs them on CPUs and
 Intel GPUs.")
     ;; OpenVINO and oneDNN are under the Apache 2.0 license, MLAS under Expat.
     (license (list license:asl2.0 license:expat))))
+
+(define-public openvino-tokenizers
+  (package
+    (name "openvino-tokenizers")
+    ;; Keep in sync with the version of openvino.
+    (version "2026.4.1.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/openvinotoolkit/openvino_tokenizers")
+             (commit version)))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1a5b585ay732r68kzi4j57b3azaw5dr7c805j0sjy060jgdxcr6n"))))
+    (build-system cmake-build-system)
+    (arguments
+     (list
+      #:build-type "Release"
+      ;; The test suite converts tokenizers of Hugging Face models downloaded
+      ;; from the network; 'check' only checks that the extension loads.
+      #:configure-flags
+      #~(list
+         ;; Use the same layout as the Python wheel, where the Python module
+         ;; looks for the extension.
+         (string-append "-DOPENVINO_TOKENIZERS_INSTALL_LIBDIR=lib/python"
+                        #$(version-major+minor (package-version python))
+                        "/site-packages/openvino_tokenizers/lib")
+         ;; The extension needs internal SentencePiece headers, so it is
+         ;; built from the source of the sentencepiece package.
+         (string-append "-DFETCHCONTENT_SOURCE_DIR_SENTENCEPIECE="
+                        #$(package-source sentencepiece))
+         "-DFETCHCONTENT_FULLY_DISCONNECTED=ON"
+         ;; Conversion extensions for the ONNX frontend are registered
+         ;; unconditionally; their header-only definitions are taken from
+         ;; the OpenVINO source, as openvino is built without that frontend.
+         (string-append "-DCMAKE_CXX_FLAGS=-I"
+                        #$(package-source openvino)
+                        "/src/frontends/onnx/frontend/include"))
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack 'use-system-pcre2
+            (lambda _
+              ;; Link against PCRE2 from Guix instead of downloading it.
+              (substitute* "src/CMakeLists.txt"
+                (("FetchContent_GetProperties\\(pcre2\\)")
+                 (string-append
+                  "find_package(PkgConfig REQUIRED)\n"
+                  "  pkg_check_modules(PCRE2 REQUIRED IMPORTED_TARGET"
+                  " libpcre2-8)\n"
+                  "  set(pcre2_POPULATED TRUE)"))
+                (("PRIVATE pcre2-8\\)")
+                 "PRIVATE PkgConfig::PCRE2)"))))
+          (replace 'install
+            (lambda _
+              (let ((site (string-append
+                           #$output "/lib/python"
+                           #$(version-major+minor (package-version python))
+                           "/site-packages/openvino_tokenizers")))
+                (invoke "cmake" "--install" "."
+                        "--component" "openvino_tokenizers")
+                ;; The Python module is normally copied by the
+                ;; py-build-cmake backend.
+                (copy-recursively "../source/python/openvino_tokenizers"
+                                  site)
+                (install-file "python/__version__.py" site))))
+          (add-after 'install 'install-metadata
+            (lambda _
+              ;; Python packages that require openvino-tokenizers, such as
+              ;; optimum-intel, look for the metadata of its wheel.
+              (let ((dist-info
+                     (string-append
+                      #$output "/lib/python"
+                      #$(version-major+minor (package-version python))
+                      "/site-packages/openvino_tokenizers-" #$version
+                      ".dist-info")))
+                (mkdir-p dist-info)
+                (call-with-output-file (string-append dist-info "/METADATA")
+                  (lambda (port)
+                    (format port "Metadata-Version: 2.1~%")
+                    (format port "Name: openvino-tokenizers~%")
+                    (format port "Version: ~a~%" #$version))))))
+          (delete 'check)
+          (add-after 'install 'check
+            (lambda* (#:key tests? #:allow-other-keys)
+              (when tests?
+                (setenv "GUIX_PYTHONPATH"
+                        (string-append
+                         #$output "/lib/python"
+                         #$(version-major+minor (package-version python))
+                         "/site-packages:" (getenv "GUIX_PYTHONPATH")))
+                (invoke "python3" "-c"
+                        (string-append
+                         "import openvino, openvino_tokenizers;"
+                         "openvino.Core().add_extension("
+                         "str(openvino_tokenizers._ext_path))"))))))))
+    (native-inputs (list pkg-config))
+    (inputs (list openvino pcre2 python))
+    (propagated-inputs (list python-openvino))
+    (supported-systems '("x86_64-linux"))
+    (home-page "https://github.com/openvinotoolkit/openvino_tokenizers")
+    (synopsis "Tokenizers for OpenVINO")
+    (description
+     "OpenVINO Tokenizers adds text processing operations to OpenVINO, so
+that the tokenizers and detokenizers of Hugging Face models can run as
+OpenVINO models.  It consists of an OpenVINO extension library and a Python
+module to load it and to convert tokenizers.")
+    ;; The extension bundles SentencePiece, also under the Apache 2.0 license.
+    (license license:asl2.0)))
 
 (define-public python-openvino
   (package
