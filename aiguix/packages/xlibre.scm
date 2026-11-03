@@ -1355,3 +1355,46 @@ Voodoo5 graphics cards for the XLibre X server.")
      "This package provides a video driver for Trident graphics chips for the
 XLibre X server.")
     (license license:x11)))
+
+(define-public xlibre-video-v4l
+  (package
+    (name "xlibre-video-v4l")
+    (version "25.0.1")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-video-v4l")
+             (commit (string-append "xlibre-xf86-video-v4l-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1savyxzmmaq51bbsbf48dgrv1x46vr4hw8k9n97icq9hzy2w56fs"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules"))
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-before 'configure 'set-install-directories
+            (lambda _
+              ;; xlibre-server.pc points into the server's store item.
+              (setenv "PKG_CONFIG_XLIBRE_SERVER_VIDEO_DRIVERS_DIR"
+                      (string-append #$output "/lib/xorg/modules/drivers"))
+              (setenv "PKG_CONFIG_XLIBRE_SERVER_DRIVER_MAN_DIR"
+                      (string-append #$output "/share/man/man4"))
+              (setenv "PKG_CONFIG_XORG_SERVER_SYSCONFIGDIR"
+                      (string-append #$output "/share/X11/xorg.conf.d"))))
+          (replace 'bootstrap
+            (lambda _
+              ;; autogen.sh runs configure unconditionally.
+              (invoke "autoreconf" "-vfi"))))))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list xlibre-server))
+    (home-page "https://github.com/X11Libre/xf86-video-v4l")
+    (synopsis "Video4Linux Xv driver for XLibre")
+    (description
+     "This package provides an Xv driver for the XLibre X server that shows
+video from Video4Linux devices, such as TV cards.")
+    (license license:x11)))
