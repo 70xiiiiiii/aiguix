@@ -35,14 +35,64 @@
   #:use-module (guix build-system pyproject)
   #:use-module (gnu packages check)
   #:use-module (gnu packages python-build)
+  #:use-module (gnu packages python-check)
   #:use-module ((gnu packages python-web)
                 #:select (python-fastapi
                           python-openai
                           python-starlette
                           python-uvicorn))
   #:use-module (gnu packages python-xyz)
+  #:use-module (gnu packages tls)
   #:use-module ((gnu packages machine-learning) #:prefix guix:)
   #:use-module (aiguix packages python-web))
+
+(define-public python-accelerate
+  (package
+    (name "python-accelerate")
+    (version "1.15.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/huggingface/accelerate")
+             (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1760z7wm93gyxl34l5f9aa6nxygc5aa6h3g29v9p4v63j9635h4d"))))
+    (build-system pyproject-build-system)
+    (arguments
+     (list
+      #:test-flags
+      '(list "tests"
+             ;; DeepSpeed is not packaged.
+             "--ignore=tests/deepspeed"
+             ;; These tests require network access.
+             "--deselect=tests/test_cli.py::ModelEstimatorTester"
+             ;; ProcessGroupGloo::allgather: invalid tensor size.
+             "--deselect=tests/test_cpu.py::MultiCPUTester::test_cpu")))
+    (propagated-inputs (list python-huggingface-hub
+                             python-numpy
+                             python-packaging
+                             python-psutil
+                             guix:python-pytorch
+                             python-pyyaml
+                             python-safetensors))
+    (native-inputs (list openssl ;for torch.compile in the tests
+                         python-parameterized
+                         python-pytest
+                         python-pytest-order
+                         python-setuptools
+                         guix:python-torchvision
+                         python-transformers))
+    (home-page "https://github.com/huggingface/accelerate")
+    (synopsis "Run PyTorch training on any device configuration")
+    (description
+     "Accelerate abstracts the boilerplate code related to multi-GPU, TPU and
+mixed-precision setups of PyTorch training scripts, so that the same script
+runs on a CPU, a single GPU or a distributed setup.  It also provides
+utilities for loading big models across devices and offloading their weights,
+which libraries such as Transformers use for quantized models.")
+    (license license:asl2.0)))
 
 (define-public python-optimum
   (package
