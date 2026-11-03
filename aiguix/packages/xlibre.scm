@@ -1269,3 +1269,32 @@ for the XLibre X server.")
      "This package provides a video driver for SiS graphics chips of the
 300/315/330/340 series for the XLibre X server.")
     (license license:bsd-3)))
+
+(define-public xlibre-video-sisusb
+  (package
+    (name "xlibre-video-sisusb")
+    (version "25.0.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-video-sisusb")
+             (commit (string-append "xlibre-xf86-video-sisusb-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0svdqkjq77a5rklid94x2p5hhp0mqp54k80hlgk6xz7chx4pyf2f"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules")
+              "CFLAGS=-g -O2 -Wno-error=implicit-function-declaration")))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list xlibre-server))
+    (home-page "https://github.com/X11Libre/xf86-video-sisusb")
+    (synopsis "SiS USB video driver for XLibre")
+    (description
+     "This package provides a video driver for SiS USB graphics adapters for
+the XLibre X server.")
+    (license license:bsd-3)))
