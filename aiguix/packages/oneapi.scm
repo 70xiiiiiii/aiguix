@@ -25,6 +25,7 @@
 
 (define-module (aiguix packages oneapi)
   #:use-module (guix build-system cmake)
+  #:use-module (guix build-system meson)
   #:use-module (guix build-system pyproject)
   #:use-module (guix gexp)
   #:use-module (guix git-download)
@@ -32,7 +33,9 @@
   #:use-module (guix packages)
   #:use-module (guix utils)
   #:use-module (gnu packages algebra)
+  #:use-module (gnu packages bash)
   #:use-module (gnu packages check)
+  #:use-module (gnu packages cmake)
   #:use-module (gnu packages compression)
   #:use-module (gnu packages cpp)
   #:use-module (gnu packages curl)
@@ -47,8 +50,10 @@
                           python-torchvision
                           sentencepiece
                           tensorflow-lite))
+  #:use-module (gnu packages mpi)
   #:use-module (gnu packages oneapi)
   #:use-module (gnu packages opencl)
+  #:use-module (gnu packages pciutils)
   #:use-module (gnu packages pcre)
   #:use-module (gnu packages pkg-config)
   #:use-module (gnu packages pretty-print)
@@ -66,8 +71,10 @@
   #:use-module (gnu packages video)
   #:use-module (gnu packages web)
   #:use-module (gnu packages xml)
+  #:use-module (gnu packages xorg)
   #:use-module (aiguix packages audio)
   #:use-module (aiguix packages cpp)
+  #:use-module (aiguix packages flashing-tools)
   #:use-module (aiguix packages machine-learning)
   #:use-module (aiguix packages monitoring)
   #:use-module (aiguix packages python-web)
@@ -981,3 +988,66 @@ them with NNCF, and runs them through classes such as
 @code{OVModelForCausalLM}, which replace their Transformers counterparts.  It
 adds the @command{optimum-cli export openvino} command.")
       (license license:asl2.0))))
+
+(define-public xpumanager
+  (package
+    (name "xpumanager")
+    (version "2.3.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/intel/xpumanager")
+             (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1x73c79vqr26wn4x6iy1hscm890ai7acnwfzm7c8nczfcw3hn8rs"))))
+    (build-system meson-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      ;; GCC 14 warns about unused results of write(2), and the project
+      ;; builds with -Werror.
+      #~(list "-Dwerror=false" "-Duse_system_levelzero=true"
+              "-Duse_system_igsc=true" "-Dwith_tests=true")
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack 'fix-paths
+            (lambda* (#:key inputs #:allow-other-keys)
+              (substitute* "oal/lin/pci_database.cpp"
+                (("\"/usr/share/hwdata/pci.ids\"")
+                 (string-append "\""
+                                (search-input-file inputs
+                                                   "share/hwdata/pci.ids")
+                                "\"")))
+              (substitute* "oal/lin/lin.cpp"
+                (("\"/bin/sh\"")
+                 (string-append "\"" (search-input-file inputs "bin/sh")
+                                "\""))))))))
+    (native-inputs (list cmake-minimal doctest pkg-config python))
+    (inputs (list bash-minimal
+                  cli11
+                  curl
+                  eudev
+                  fmt
+                  hwdata
+                  (list hwloc "lib")
+                  igsc
+                  level-zero/driver-path
+                  libpciaccess
+                  metee
+                  nlohmann-json))
+    ;; Let the loader find the driver, such as intel-compute-runtime, when
+    ;; both are in the same profile.
+    (native-search-paths
+     (package-native-search-paths level-zero/driver-path))
+    (home-page "https://github.com/intel/xpumanager")
+    (synopsis "Monitoring and management tool for Intel GPUs")
+    (description
+     "XPU Manager monitors and manages Intel discrete GPUs, such as the Arc
+and Data Center series.  Its command @command{xpu-smi} shows the devices,
+their firmware versions and topology, reports telemetry such as utilization,
+power, frequency, temperature and memory use, and changes settings such as
+power limits and frequency ranges.  It can also update the GPU firmware
+through @code{libigsc}.")
+    (license license:expat)))
