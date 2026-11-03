@@ -1298,3 +1298,31 @@ for the XLibre X server.")
      "This package provides a video driver for SiS USB graphics adapters for
 the XLibre X server.")
     (license license:bsd-3)))
+
+(define-public xlibre-video-tdfx
+  (package
+    (name "xlibre-video-tdfx")
+    (version "25.0.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-video-tdfx")
+             (commit (string-append "xlibre-xf86-video-tdfx-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0c7lnw084lrnm4q531q3494bjllm0y28g09bdl3n4nhqq7ny6y1q"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules"))))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list mesa xlibre-server xorgproto))
+    (home-page "https://github.com/X11Libre/xf86-video-tdfx")
+    (synopsis "3dfx video driver for XLibre")
+    (description
+     "This package provides a video driver for 3dfx Voodoo3, Voodoo4 and
+Voodoo5 graphics cards for the XLibre X server.")
+    (license license:x11)))
