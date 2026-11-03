@@ -916,3 +916,31 @@ XLibre X server.")
      "This package provides a video driver for ATI graphics cards based on the
 Mach64 series or older chips for the XLibre X server.")
     (license license:x11)))
+
+(define-public xlibre-video-mga
+  (package
+    (name "xlibre-video-mga")
+    (version "25.0.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-video-mga")
+             (commit (string-append "xlibre-xf86-video-mga-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0i2ixi7ly2vj0jwmva82kvr8vncy73ws1rc4qbs62myf22axi1zg"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules"))))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list mesa xlibre-server xorgproto))
+    (home-page "https://github.com/X11Libre/xf86-video-mga")
+    (synopsis "Matrox video driver for XLibre")
+    (description
+     "This package provides a video driver for Matrox graphics cards for the
+XLibre X server.")
+    (license license:x11)))
