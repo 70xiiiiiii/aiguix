@@ -510,3 +510,38 @@ server.")
      "This package provides a video driver for AMD Radeon graphics cards
 supported by the amdgpu kernel driver, for the XLibre X server.")
     (license license:x11)))
+
+(define-public xlibre-video-apm
+  (package
+    (name "xlibre-video-apm")
+    (version "25.0.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-video-apm")
+             (commit (string-append "xlibre-xf86-video-apm-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "1w96f6xbzvdbyynk921j530y7x88g0slf7g193pj857vqs7a5r4i"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules")
+              "CFLAGS=-g -O2 -Wno-error=implicit-function-declaration")
+      #:phases
+      #~(modify-phases %standard-phases
+          (replace 'bootstrap
+            (lambda _
+              ;; autogen.sh runs configure unconditionally.
+              (invoke "autoreconf" "-vfi"))))))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list xlibre-server))
+    (home-page "https://github.com/X11Libre/xf86-video-apm")
+    (synopsis "Alliance ProMotion video driver for XLibre")
+    (description
+     "This package provides a video driver for Alliance ProMotion graphics
+chips for the XLibre X server.")
+    (license license:x11)))
