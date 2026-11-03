@@ -669,3 +669,32 @@ supported by the radeon kernel driver, for the XLibre X server.")
      "This package provides a video driver for Chips and Technologies graphics
 chips for the XLibre X server.")
     (license license:x11)))
+
+(define-public xlibre-video-cirrus
+  (package
+    (name "xlibre-video-cirrus")
+    (version "25.0.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/X11Libre/xf86-video-cirrus")
+             (commit (string-append "xlibre-xf86-video-cirrus-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0hxs6kdx899f20v5zsiqdcl8f2m136jwfqbb3zkbi75ap95vx3jf"))))
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list (string-append "--with-xorg-module-dir="
+                             #$output "/lib/xorg/modules")
+              "CFLAGS=-g -O2 -Wno-error=implicit-function-declaration")))
+    (native-inputs (list autoconf automake libtool pkg-config util-macros))
+    (inputs (list xlibre-server))
+    (home-page "https://github.com/X11Libre/xf86-video-cirrus")
+    (synopsis "Cirrus Logic video driver for XLibre")
+    (description
+     "This package provides a video driver for Cirrus Logic graphics chips for
+the XLibre X server.")
+    (license license:x11)))
