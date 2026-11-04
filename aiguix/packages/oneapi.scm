@@ -1508,6 +1508,20 @@ them with NNCF, and runs them through classes such as
 adds the @command{optimum-cli export openvino} command.")
       (license license:asl2.0))))
 
+(define-public vc-intrinsics
+  (package
+    (inherit (@ (gnu packages oneapi) vc-intrinsics))
+    (version "0.26.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/intel/vc-intrinsics")
+             (commit (string-append "v" version))))
+       (file-name (git-file-name "vc-intrinsics" version))
+       (sha256
+        (base32 "1rah6vlv9niqs8lmv21dlmjz7b60y2lc22wg3r2wnanfh4jrgb8l"))))))
+
 (define-public xpumanager
   (package
     (name "xpumanager")
