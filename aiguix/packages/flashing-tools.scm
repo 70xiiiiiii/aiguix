@@ -55,10 +55,10 @@
     (home-page "https://github.com/intel/metee")
     (synopsis "Library to access Intel CSME and GSC firmware interfaces")
     (description
-     "MeTee is a C library to communicate with the firmware of Intel's
-Converged Security and Management Engine (CSME) and of the Graphics System
-Controller (GSC) of Intel discrete GPUs through the Linux @code{mei} driver.
-It provides a C and a C++ interface.")
+     "MeTee is a C library that talks to Intel firmware through the Linux
+@code{mei} driver: the Converged Security and Management Engine (CSME) of the
+chipset and the Graphics System Controller (GSC) of discrete GPUs.  It
+provides a C and a C++ interface.")
     (license license:asl2.0)))
 
 (define-public igsc
