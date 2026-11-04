@@ -380,6 +380,95 @@ Intel GPUs and the NPU of Intel CPUs.  On the NPU, it needs
     ;; OpenVINO and oneDNN are under the Apache 2.0 license, MLAS under Expat.
     (license (list license:asl2.0 license:expat))))
 
+(define-public intel-graphics-compiler
+  (package
+    (inherit (@ (gnu packages oneapi) intel-graphics-compiler))
+    (version "2.42.6")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/intel/intel-graphics-compiler")
+             (commit (string-append "v" version))))
+       (file-name (git-file-name "intel-graphics-compiler" version))
+       (sha256
+        (base32 "08j9nqh1v30x8iy69rk0limpj1xjl4h32p8fs8fix0cqazgrn7s0"))
+       (snippet
+        #~(begin
+            (use-modules (guix build utils))
+            ;; As in Guix, for the clang headers of LLVM 22: replace the
+            ;; stdint.h that IRBuilderGeneratorCodeGen.cmake takes from the
+            ;; first of these directories that exists.
+            (for-each
+             (lambda (v)
+               (let* ((headers-dir (string-append
+                                    "external/llvm/releases/" v
+                                    "/clang/lib/Headers"))
+                      (stdint.h (string-append headers-dir "/stdint.h")))
+                 (when (file-exists? headers-dir)
+                   (when (file-exists? stdint.h)
+                     (delete-file stdint.h))
+                   (call-with-output-file stdint.h
+                     (lambda (port)
+                       (display "#ifndef IGC_PORTABLE_STDINT_H
+#define IGC_PORTABLE_STDINT_H
+typedef __INT8_TYPE__ int8_t;
+typedef __INT16_TYPE__ int16_t;
+typedef __INT32_TYPE__ int32_t;
+typedef __INT64_TYPE__ int64_t;
+typedef __UINT8_TYPE__ uint8_t;
+typedef __UINT16_TYPE__ uint16_t;
+typedef __UINT32_TYPE__ uint32_t;
+typedef __UINT64_TYPE__ uint64_t;
+#endif
+" port))))))
+             '("22" "22.0.0" "22.1.8"))
+            ;; LLVMModule->dump() only exists when LLVM is built with
+            ;; assertions, which the LLVM of Guix is not.
+            (substitute* "IGC/AdaptorOCL/dllInterfaceCompute.cpp"
+              (("LLVMModule->dump\\(\\);") ";"))))))
+    (arguments
+     (substitute-keyword-arguments
+         (package-arguments (@ (gnu packages oneapi) intel-graphics-compiler))
+       ;; The flags of the IGC of Guix name its inputs, for LLVM 17.
+       ((#:configure-flags _)
+        #~(let ((clang #$(this-package-native-input "clang"))
+                (lld #$(this-package-native-input "lld"))
+                (llvm #$(this-package-native-input "llvm"))
+                (opencl-clang #$(this-package-native-input "opencl-clang"))
+                (spirv-llvm-translator
+                 #$(this-package-native-input "spirv-llvm-translator")))
+            (list "-DIGC_OPTION__LLVM_MODE=Prebuilds"
+                  (string-append "-DIGC_OPTION__LLVM_PREFERRED_VERSION="
+                                 #$(package-version llvm-22))
+                  (string-append "-DCMAKE_INSTALL_PREFIX=" #$output)
+                  ;; CMake does not add these to the RPATH by itself.
+                  "-DCMAKE_INSTALL_RPATH_USE_LINK_PATH=ON"
+                  (string-append "-DCMAKE_INSTALL_RPATH="
+                                 llvm "/lib;"
+                                 #$(this-package-input "zlib") "/lib;"
+                                 opencl-clang "/lib;"
+                                 spirv-llvm-translator "/lib")
+                  (string-append "-DCMAKE_PREFIX_PATH="
+                                 llvm ";"
+                                 spirv-llvm-translator ";" opencl-clang)
+                  (string-append "-DIGC_OPTION__LLDELF_LIB_DIR=" lld)
+                  (string-append "-DIGC_OPTION__LLD_BIN_DIR=" lld)
+                  (string-append "-DIGC_OPTION__LLDELF_H_DIR=" lld)
+                  (string-append "-DIGC_OPTION__OPENCL_HEADER_PATH="
+                                 clang "/lib/clang/"
+                                 #$(version-major (package-version llvm-22))
+                                 "/include/opencl-c.h")
+                  "-DCMAKE_INSTALL_LIBDIR=lib")))))
+    (native-inputs
+     (modify-inputs (package-native-inputs
+                     (@ (gnu packages oneapi) intel-graphics-compiler))
+       (replace "clang" clang-22)
+       (replace "lld" lld-22)
+       (replace "llvm" llvm-22)
+       (replace "opencl-clang" opencl-clang-22)
+       (replace "spirv-llvm-translator" spirv-llvm-translator-22)))))
+
 (define-public linux-npu-driver
   (package
     (name "linux-npu-driver")
