@@ -69,6 +69,7 @@
   #:use-module (gnu packages serialization)
   #:use-module (gnu packages stb)
   #:use-module (gnu packages tls)
+  #:use-module ((gnu packages version-control) #:select (git-minimal))
   #:use-module (gnu packages video)
   #:use-module (gnu packages web)
   #:use-module (gnu packages xml)
@@ -461,6 +462,215 @@ without it, the driver can only run models compiled beforehand.  For users
 to access the NPU, add @code{npu-service-type} from @code{(aiguix services
 npu)} to the @code{operating-system} configuration.")
     (license license:expat)))
+
+(define-public npu-compiler
+  (let ((commit "37a2ec119255903a3a6066dbe02c91b563dfc44c")
+        (revision "0"))
+    (package
+      (name "npu-compiler")
+      ;; Upstream marks this commit as the content for OpenVINO 2026.4.1.
+      (version (git-version "2026.4.1" revision commit))
+      (source
+       (origin
+         (method git-fetch)
+         (uri (git-reference
+               (url "https://github.com/openvinotoolkit/npu_compiler")
+               (commit commit)))
+         (file-name (git-file-name name version))
+         (sha256
+          (base32 "0kq7nb9g1ggxk2blgmgbxa4m5qbpf4d9xhslp2fvjzg58wd23qbx"))
+         (modules '((guix build utils)))
+         (snippet
+          ;; git-fetch gets only the Git LFS pointers of the prebuilt SHAVE
+          ;; kernels, not the kernels.  Remove them, but keep the linker
+          ;; scripts.  The kernels run on the vector cores of the NPU, and
+          ;; neither their source code nor the toolchain that builds them
+          ;; is public.
+          #~(for-each delete-file
+                      (find-files "sw_runtime_kernels"
+                                  (lambda (file stat)
+                                    (and (string-contains file "/prebuild/")
+                                         (not (string-suffix? ".ld"
+                                                              file)))))))))
+      (build-system cmake-build-system)
+      (arguments
+       (list
+        #:build-type "Release"
+        #:tests? #f
+        #:configure-flags
+        #~(let ((developer (search-input-directory %build-inputs
+                                                   "developer_package")))
+            (list (string-append "-DOpenVINODeveloperPackage_DIR="
+                                 developer "/cmake")
+                  ;; Do not keep a reference to the "developer" output.
+                  (string-append "-DCMAKE_CXX_FLAGS=-ffile-prefix-map="
+                                 developer "=developer_package")
+                  ;; Build the libraries that the NPU driver loads.
+                  "-DBUILD_COMPILER_FOR_DRIVER=ON"
+                  "-DENABLE_NPU_EXECUTION_ENGINE=OFF"
+                  "-DENABLE_NPU_LSP_SERVER=OFF"
+                  "-DENABLE_PRIVATE_TESTS=OFF"
+                  "-DENABLE_CPPLINT=OFF"
+                  "-DENABLE_LTO=OFF"
+                  "-DENABLE_FASTER_BUILD=OFF"))
+        #:phases
+        #~(modify-phases %standard-phases
+            (add-after 'unpack 'unpack-submodules
+              (lambda _
+                (for-each
+                 (lambda (source directory)
+                   (copy-recursively source directory)
+                   (for-each make-file-writable
+                             (find-files directory #:directories? #t)))
+                 (list #$(this-package-native-input "npu-compiler-llvm")
+                       #$(this-package-native-input "npu-compiler-elf")
+                       #$(this-package-native-input "npu-nn-cost-model"))
+                 '("thirdparty/llvm-project"
+                   "thirdparty/elf"
+                   "thirdparty/vpucostmodel"))))
+            (add-after 'unpack 'use-system-flatbuffers
+              (lambda* (#:key inputs #:allow-other-keys)
+                ;; Provide the targets that a build inside the OpenVINO tree
+                ;; would provide, before the cost model looks for them.
+                (let ((flatc (search-input-file inputs "bin/flatc")))
+                  (substitute* "thirdparty/CMakeLists.txt"
+                    (("^set\\(VPUNN_BUILD_SHARED_LIB " all)
+                     (string-append
+                      "find_package(nlohmann_json CONFIG REQUIRED)\n"
+                      "find_package(flatbuffers CONFIG REQUIRED)\n"
+                      "add_executable(flatc IMPORTED GLOBAL)\n"
+                      "set_target_properties(flatc PROPERTIES"
+                      " IMPORTED_LOCATION \"" flatc "\")\n"
+                      "add_library(flatbuffers INTERFACE)\n"
+                      "target_link_libraries(flatbuffers INTERFACE"
+                      " flatbuffers::flatbuffers)\n"
+                      "set(flatbuffers_TARGET flatbuffers PARENT_SCOPE)\n"
+                      "set(flatc_TARGET flatc PARENT_SCOPE)\n"
+                      "set(flatc_COMMAND \"" flatc "\" PARENT_SCOPE)\n"
+                      all))))))
+            (add-after 'unpack 'find-openvino-dependencies
+              (lambda _
+                ;; The developer package of openvino refers to these targets
+                ;; without looking for them.
+                (substitute* "CMakeLists.txt"
+                  (("^find_package\\(OpenVINODeveloperPackage" all)
+                   (string-append "find_package(ittapi CONFIG REQUIRED)\n"
+                                  all)))))
+            (add-after 'unpack 'set-commit
+              (lambda _
+                ;; There is no Git repository to ask.
+                (substitute* "cmake/compiler_commit_hash.cmake"
+                  (("git rev-parse HEAD")
+                   (string-append "echo " #$commit)))))
+            (add-after 'unpack 'skip-driver-compiler-tests
+              (lambda _
+                ;; These tests need the googletest fork of OpenVINO, which
+                ;; its developer package does not provide.
+                (substitute* "src/vpux_driver_compiler/CMakeLists.txt"
+                  (("^add_subdirectory\\(test\\)") ""))))
+            (add-after 'unpack 'install-to-prefix
+              (lambda _
+                ;; Install the libraries to lib/ instead of cid/lib/.
+                (substitute* "src/CMakeLists.txt"
+                  (("set\\(INSTALL_DESTINATION cid\\)")
+                   "set(INSTALL_DESTINATION .)"))))
+            (add-after 'unpack 'find-compiler-library
+              (lambda _
+                ;; The loader looks for the compiler next to libopenvino,
+                ;; which is a separate package; give it the full file name.
+                (substitute* (string-append "src/vpux_driver_compiler/src/"
+                                            "vpux_compiler_l0/"
+                                            "vcl_compiler_loader.cpp")
+                  (("ov::util::make_plugin_library_name\\([^;]*\\)\\)")
+                   (string-append "std::string(\"" #$output "/lib/"
+                                  "libopenvino_intel_npu_compiler.so\"))")))))
+            (replace 'build
+              (lambda* (#:key parallel-build? #:allow-other-keys)
+                (invoke "cmake" "--build" "."
+                        "--parallel" (if parallel-build?
+                                         (number->string
+                                          (parallel-job-count))
+                                         "1")
+                        "--target" "openvino_intel_npu_compiler"
+                        "openvino_intel_npu_compiler_loader")))
+            (replace 'install
+              (lambda _
+                (invoke "cmake" "--install" "." "--component" "CiD"
+                        "--prefix" #$output)
+                (with-directory-excursion #$output
+                  ;; The sources and static library of the ELF loader, for
+                  ;; drivers that build it in, and a copy of the header.
+                  (delete-file-recursively "cid")
+                  (delete-file "npu_driver_compiler.h")
+                  (let ((doc (string-append "share/doc/" #$name "-"
+                                            #$version)))
+                    (mkdir-p doc)
+                    (for-each (lambda (file)
+                                (rename-file file
+                                             (string-append doc "/" file)))
+                              '("CHANGES.txt" "README.md"
+                                "build_manifest.json")))
+                  ;; The NPU plugin of OpenVINO looks for the loader next
+                  ;; to itself, to compile models without the driver, for
+                  ;; example for an NPU that is not present.
+                  (let ((plugins (string-append
+                                  "lib/openvino-"
+                                  #$(package-version openvino))))
+                    (mkdir-p plugins)
+                    (symlink
+                     "../libopenvino_intel_npu_compiler_loader.so"
+                     (string-append
+                      plugins
+                      "/libopenvino_intel_npu_compiler_loader.so")))))))))
+      (native-inputs
+       (list git-minimal
+             (list openvino "developer")
+             (origin
+               (method git-fetch)
+               (uri (git-reference
+                     (url
+                      "https://github.com/intel-staging/npu-compiler-llvm")
+                     (commit "980c1ca33aad7bda278934cbb1e03268b92cf64e")))
+               (file-name "npu-compiler-llvm")
+               (sha256
+                (base32
+                 "05kkd6gpscxv1rf0fivyx0iszhcbs4b83g4xyxdr4cgknv6k5jkw")))
+             (origin
+               (method git-fetch)
+               (uri (git-reference
+                     (url
+                      "https://github.com/openvinotoolkit/npu_compiler_elf")
+                     (commit "edbd3b0dbb6f51f4f6c18aba3b26d4c20b1a5964")))
+               (file-name "npu-compiler-elf")
+               (sha256
+                (base32
+                 "1i2gzb5rp9k5qqs651n1nk64qa8h1d3kylb0nqahid5iw5ryx0fq")))
+             (origin
+               (method git-fetch)
+               (uri (git-reference
+                     (url "https://github.com/intel/npu-nn-cost-model")
+                     (commit "6b89f4285cf17c9bcc763e5b320c996612cf7a87")))
+               (file-name "npu-nn-cost-model")
+               (sha256
+                (base32
+                 "01p6m45hcn5sp4352my3f07idi9hz00wmxb1klfh02fa4mkwhjgm")))
+             python-minimal))
+      (inputs
+       (list flatbuffers ittapi nlohmann-json openvino pugixml zlib))
+      (supported-systems '("x86_64-linux"))
+      (home-page "https://github.com/openvinotoolkit/npu_compiler")
+      (synopsis "Model compiler for the NPU of Intel CPUs")
+      (description
+       "This package provides the compiler that the NPU driver
+@code{linux-npu-driver} and the NPU plugin of OpenVINO use to compile
+OpenVINO models for the neural processing unit (NPU) of Intel Core Ultra
+CPUs.  The plugin uses it to compile models for an NPU that is not present,
+given with the property @code{NPU_PLATFORM}.  It is built on MLIR and
+includes the VPUNN cost model.  The prebuilt SHAVE kernels, which run
+operations such as Softmax on the vector cores of the NPU, are not part of
+this package: their source code is not public.  Without them, the compiler
+can only compile models whose operations run on the matrix units of the NPU.")
+      (license license:asl2.0))))
 
 (define-public openvino-genai
   (package
