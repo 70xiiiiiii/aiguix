@@ -380,6 +380,28 @@ Intel GPUs and the NPU of Intel CPUs.  On the NPU, it needs
     ;; OpenVINO and oneDNN are under the Apache 2.0 license, MLAS under Expat.
     (license (list license:asl2.0 license:expat))))
 
+(define-public intel-compute-runtime
+  (package
+    (inherit (@ (gnu packages oneapi) intel-compute-runtime))
+    (version "26.40.40196.8")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/intel/compute-runtime")
+             (commit version)))
+       (file-name (git-file-name "intel-compute-runtime" version))
+       (sha256
+        (base32 "00255v5gnsm4jxncxxzh94iwb93jkljly9l9f94qw7h74imp8g2z"))))
+    (inputs
+     (modify-inputs (package-inputs
+                     (@ (gnu packages oneapi) intel-compute-runtime))
+       (replace "intel-graphics-compiler" intel-graphics-compiler)))
+    (native-inputs
+     (modify-inputs (package-native-inputs
+                     (@ (gnu packages oneapi) intel-compute-runtime))
+       (replace "level-zero" level-zero)))))
+
 (define-public intel-graphics-compiler
   (package
     (inherit (@ (gnu packages oneapi) intel-graphics-compiler))
