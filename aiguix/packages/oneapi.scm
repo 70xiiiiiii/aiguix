@@ -1438,7 +1438,8 @@ ONNX.")
     (synopsis "Python bindings for OpenVINO")
     (description
      "This package provides the Python API of OpenVINO, a toolkit for
-optimizing and deploying deep learning models on CPUs and Intel GPUs.")
+optimizing and deploying deep learning models on CPUs, Intel GPUs and the NPU
+of Intel CPUs.")
     (license license:asl2.0)))
 
 (define-public python-optimum-intel
