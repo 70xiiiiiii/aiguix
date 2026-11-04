@@ -1,0 +1,7 @@
+(channel
+  (version 0)
+  (dependencies
+   (channel
+     (name aiguix)
+     (url "https://github.com/70xiiiiiii/aiguix")
+     (branch "main"))))
