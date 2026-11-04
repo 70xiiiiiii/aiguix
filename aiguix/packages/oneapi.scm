@@ -245,8 +245,12 @@ and the NPU compiler are built against them.")
               ;; The JAX frontend is only installed with the Python
               ;; bindings, but openvino.pc would list it anyway.
               "-DENABLE_OV_JAX_FRONTEND=OFF"
-              ;; The NPU plugin needs a user-space driver missing in Guix.
-              "-DENABLE_INTEL_NPU=OFF"
+              ;; This would download a prebuilt NPU compiler; the NPU driver
+              ;; and plugin load the one of npu-compiler instead.
+              "-DENABLE_INTEL_NPU_COMPILER=OFF"
+              ;; The internal NPU tools, such as compile_tool, need the
+              ;; bundled gflags.
+              "-DENABLE_INTEL_NPU_INTERNAL=OFF"
               ;; Windows-only telemetry client of the AUTO plugin.
               "-DENABLE_IPF_CLIENT_API=OFF"
               ;; Example plugin for plugin developers.
@@ -277,6 +281,29 @@ and the NPU compiler are built against them.")
                 ((".*export_targets\\(TARGET openvino::liburing.*") "")
                 ((".*INSTALL_INCLUDE_DIRECTORIES .*openvino::liburing.*") "")
                 ((".*ov_install_static_lib\\(openvino_liburing.*") ""))))
+          (add-after 'unpack 'use-system-npu-extensions
+            (lambda* (#:key inputs #:allow-other-keys)
+              (substitute* "src/plugins/intel_npu/thirdparty/CMakeLists.txt"
+                (("\\$\\{CMAKE_CURRENT_SOURCE_DIR\\}/level-zero-ext/")
+                 (dirname
+                  (search-input-file inputs
+                                     "include/level_zero/ze_graph_ext.h"))))
+              ;; This target only exists with the bundled Level Zero.
+              (substitute*
+                  "src/plugins/intel_npu/src/utils/src/vm/CMakeLists.txt"
+                (("^add_dependencies\\(.* prepare_ze_headers\\)" all)
+                 (string-append "if(TARGET prepare_ze_headers)\n    " all
+                                "\nendif()")))))
+          (add-after 'unpack 'find-level-zero
+            (lambda* (#:key inputs #:allow-other-keys)
+              ;; The NPU plugin opens the Level Zero loader by name.
+              (substitute* "src/common/zero_loader/src/zero.api.cpp"
+                (("ov::util::make_plugin_library_name\\(\\{\\}, baseName\\);")
+                 (string-append
+                  "std::filesystem::path(\""
+                  (search-input-file inputs "lib/libze_loader.so.1")
+                  "\");"))
+                (("libpath \\+= LIB_ZE_LOADER_SUFFIX;") ""))))
           (add-after 'unpack 'accept-protobuf-6
             (lambda _
               ;; OpenVINO accepts protobuf >= 5.26 and < 7, but the CMake
@@ -321,6 +348,7 @@ and the NPU compiler are built against them.")
                   flatbuffers
                   ittapi
                   level-zero/driver-path
+                  level-zero-npu-extensions
                   libva
                   liburing
                   nlohmann-json
@@ -343,8 +371,9 @@ and the NPU compiler are built against them.")
     (description
      "OpenVINO is a toolkit for optimizing and deploying deep learning models.
 It converts models from frameworks such as TensorFlow, TensorFlow Lite and
-PyTorch into its own intermediate representation and runs them on CPUs and
-Intel GPUs.")
+PyTorch into its own intermediate representation and runs them on CPUs,
+Intel GPUs and the NPU of Intel CPUs.  On the NPU, it needs
+@code{linux-npu-driver} and @code{npu-compiler} in the same profile.")
     ;; OpenVINO and oneDNN are under the Apache 2.0 license, MLAS under Expat.
     (license (list license:asl2.0 license:expat))))
 
