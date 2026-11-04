@@ -44,6 +44,7 @@
   #:use-module (gnu packages graphviz)
   #:use-module (gnu packages image-processing)
   #:use-module (gnu packages linux)
+  #:use-module (gnu packages llvm)
   #:use-module (gnu packages logging)
   #:use-module ((gnu packages machine-learning)
                 #:select (python-pytorch
@@ -82,6 +83,7 @@
   #:use-module (aiguix packages python-web)
   #:use-module (aiguix packages rpc)
   #:use-module (aiguix packages version-control)
+  #:use-module (aiguix packages vulkan)
   #:use-module (aiguix packages web))
 
 ;; The loader of Guix finds drivers such as intel-compute-runtime only
@@ -671,6 +673,46 @@ operations such as Softmax on the vector cores of the NPU, are not part of
 this package: their source code is not public.  Without them, the compiler
 can only compile models whose operations run on the matrix units of the NPU.")
       (license license:asl2.0))))
+
+;; Needed by Intel Graphics Compiler, which requires this exact major version.
+(define-public opencl-clang-22
+  (package
+    (inherit opencl-clang)
+    (version "22.1.4")
+    (source
+     (origin
+       (inherit (package-source opencl-clang))
+       (uri (git-reference
+             (url "https://github.com/intel/opencl-clang")
+             (commit (string-append "v" version))))
+       (file-name (git-file-name "opencl-clang" version))
+       (sha256
+        (base32 "19416b7g4wbjfmibzgr33b1sd7yh5h1zn999064jbkfgkwp4gpd5"))))
+    (arguments
+     (substitute-keyword-arguments (package-arguments opencl-clang)
+       ;; The flags of opencl-clang name the inputs of opencl-clang.
+       ((#:configure-flags _)
+        #~(let ((llvm #$(this-package-input "llvm"))
+                (clang #$(this-package-input "clang")))
+            (list (string-append "-DPREFERRED_LLVM_VERSION="
+                                 #$(package-version llvm-22))
+                  (string-append "-DLLVM_DIR=" llvm "/lib/cmake/llvm")
+                  (string-append "-DClang_DIR=" clang "/lib/cmake/clang")
+                  "-DLLVMSPIRV_INCLUDED_IN_LLVM=OFF"
+                  (string-append "-DSPIRV_TRANSLATOR_DIR="
+                                 #$(this-package-input
+                                    "spirv-llvm-translator"))
+                  "-DLLVM_INCLUDE_TESTS=ON"
+                  (string-append "-DLLVM_EXTERNAL_LIT="
+                                 #$(this-package-native-input "python-lit")
+                                 "/bin/lit")
+                  (string-append "-DCLANG_TOOLS_DIR=" clang "/bin"))))))
+    (inputs (list llvm-22 clang-22 spirv-llvm-translator-22))
+    (synopsis "Clang-based compiler for OpenCL targeting SPIR-V, for LLVM 22")
+    (description
+     "A standalone build of Intel's opencl-clang (libopencl-clang)
+against a prebuilt LLVM/Clang 22, as used by Intel Graphics Compiler in
+Prebuilds mode.")))
 
 (define-public openvino-genai
   (package
