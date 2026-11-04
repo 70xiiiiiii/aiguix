@@ -1562,8 +1562,9 @@ adds the @command{optimum-cli export openvino} command.")
     (home-page "https://github.com/intel/xpumanager")
     (synopsis "Monitoring and management tool for Intel GPUs")
     (description
-     "XPU Manager monitors and manages Intel discrete GPUs, such as the Arc
-and Data Center series.  Its command @command{xpu-smi} shows the devices,
+     "XPU Manager monitors and manages Intel GPUs, both integrated and
+discrete, such as the Arc and Data Center series.  Despite its name, it does
+not handle NPUs or CPUs.  Its command @command{xpu-smi} shows the devices,
 their firmware versions and topology, reports telemetry such as utilization,
 power, frequency, temperature and memory use, and changes settings such as
 power limits and frequency ranges.  It can also update the GPU firmware
