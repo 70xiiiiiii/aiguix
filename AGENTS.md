@@ -6,8 +6,9 @@ humans who work with them. What the channel is for is in the
 
 ## What belongs here
 
-- Free software only. Nonfree software goes to
-  [nonguix](https://gitlab.com/nonguix/nonguix).
+- Free software only. Nonfree software goes to the branch `nonfree`, a
+  separate channel with its own `AGENTS.md`. Nothing on `main` may depend
+  on that branch: aiguix must work without it.
 - Packages written by or with AI.
 - A package leaves this channel once Guix has a compatible version.
 

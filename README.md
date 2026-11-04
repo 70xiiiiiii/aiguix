@@ -11,8 +11,9 @@ you install.
 ## Rules
 
 1. **Free software only.** Every package must be free software, as in
-   Guix. Nonfree software belongs in
-   [nonguix](https://gitlab.com/nonguix/nonguix), not here.
+   Guix. Nonfree software belongs on the branch
+   [`nonfree`](https://github.com/70xiiiiiii/aiguix/tree/nonfree), a
+   separate channel that builds on this one.
 2. **Written by or with AI, and marked as such.** Every commit carries a
    `Co-Authored-By:` trailer that names the model involved, for example:
 
@@ -40,6 +41,11 @@ Add the channel to `~/.config/guix/channels.scm`:
 ```
 
 Then run `guix pull`.
+
+To get the nonfree part as well, add the channel of the branch `nonfree`
+instead, as its
+[README](https://github.com/70xiiiiiii/aiguix/blob/nonfree/README.md)
+shows. It brings this channel along.
 
 The channel has no
 [introduction](https://guix.gnu.org/manual/en/html_node/Channel-Authentication.html)
