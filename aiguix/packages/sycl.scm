@@ -30,6 +30,10 @@
   #:use-module (guix git-download)
   #:use-module ((guix licenses) #:prefix license:)
   #:use-module (guix packages)
+  #:use-module (guix utils)
+  #:use-module (gnu packages llvm)
+  #:use-module ((gnu packages oneapi) #:select (onednn))
+  #:use-module (gnu packages opencl)
   #:use-module (aiguix packages llvm))
 
 (define-public onemath
@@ -88,3 +92,46 @@ them through a backend for the device.  This package has the generic BLAS
 backend of @code{generic-sycl-components}, which runs on any SYCL device,
 such as Intel GPUs through DPC++.")
     (license license:asl2.0)))
+
+(define-public onednn-sycl
+  (package
+    (inherit onednn)
+    (name "onednn-sycl")
+    (arguments
+     (substitute-keyword-arguments (package-arguments onednn)
+       ((#:configure-flags flags)
+        ;; After the flags of onednn, so that these win.
+        #~(append #$flags
+                  (list (string-append "-DCMAKE_C_COMPILER="
+                                       #$(file-append dpcpp "/bin/clang"))
+                        (string-append "-DCMAKE_CXX_COMPILER="
+                                       #$(file-append dpcpp "/bin/clang++"))
+                        "-DDNNL_GPU_RUNTIME=SYCL"
+                        ;; The graph API, which PyTorch uses for attention
+                        ;; on Intel GPUs.
+                        "-DONEDNN_BUILD_GRAPH=ON")))
+       ;; These need a SYCL device.
+       ((#:test-exclude _ "") "_gpu$|^test_api_sycl$")
+       ((#:phases phases)
+        #~(modify-phases #$phases
+            (add-after 'unpack 'fix-cache-size-without-sysfs
+              (lambda _
+                ;; On hybrid CPUs, the cache sizes come from /sys, which the
+                ;; build environment lacks; a size of 0 makes the CPU
+                ;; primitives divide by zero.  Fall back to CPUID then.
+                (substitute* "src/cpu/x64/platform.cpp"
+                  (("return min_cache_bytes;")
+                   "return min_cache_bytes > 0 ? min_cache_bytes
+        : get_per_core_cache_size_cpuid(level);"))))))))
+    (native-inputs
+     (modify-inputs (package-native-inputs onednn)
+       (prepend dpcpp)))
+    (inputs
+     (modify-inputs (package-inputs onednn)
+       (prepend libomp-23 opencl-icd-loader)))
+    (synopsis "Deep neural network library for CPUs and SYCL GPUs")
+    (description
+     "@acronym{OneDNN, OneAPI Deep Neural Network Library} is a cross-platform
+performance library of basic building blocks for deep learning applications.
+This variant is built with DPC++ and runs on Intel GPUs through SYCL as well
+as on CPUs, and includes the graph API.")))
