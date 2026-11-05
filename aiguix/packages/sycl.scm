@@ -34,12 +34,14 @@
   #:use-module (gnu packages check)
   #:use-module (gnu packages linux)
   #:use-module (gnu packages llvm)
+  #:use-module ((gnu packages machine-learning) #:select (python-pytorch))
   #:use-module (gnu packages mpi)
   #:use-module ((gnu packages oneapi) #:select (onednn umf))
   #:use-module (gnu packages opencl)
   #:use-module (gnu packages parallel)
   #:use-module (gnu packages profiling)
-  #:use-module ((aiguix packages oneapi) #:select (level-zero/driver-path))
+  #:use-module ((aiguix packages oneapi)
+                #:select (intel-compute-runtime level-zero/driver-path))
   #:use-module (aiguix packages llvm))
 
 (define-public onemath
@@ -254,3 +256,158 @@ It transports data through libfabric or MPI.")
 performance library of basic building blocks for deep learning applications.
 This variant is built with DPC++ and runs on Intel GPUs through SYCL as well
 as on CPUs, and includes the graph API.")))
+
+(define-public python-pytorch-xpu
+  (package
+    (inherit python-pytorch)
+    (name "python-pytorch-xpu")
+    (source
+     (origin
+       (inherit (package-source python-pytorch))
+       (snippet
+        #~(begin
+            #$(origin-snippet (package-source python-pytorch))
+            ;; The commit in third_party/xpu.txt, which the build would
+            ;; clone with Git.
+            (copy-recursively
+             #$(origin
+                 (method git-fetch)
+                 (uri (git-reference
+                       (url "https://github.com/intel/torch-xpu-ops")
+                       (commit "60bb67cae89d267fee2040f3e4b18e2ad64055e8")))
+                 (sha256
+                  (base32
+                   "0f6izs9dpyrh6n7b1zjbm03983kyvqq8vg7xss9ipqflk4ngs78k"))
+                 (file-name "torch-xpu-ops-for-pytorch"))
+             "third_party/torch-xpu-ops")
+            ;; The tag in cmake/SYCLTLA.cmake of torch-xpu-ops, which the
+            ;; build would fetch.
+            (copy-recursively
+             #$(origin
+                 (method git-fetch)
+                 (uri (git-reference
+                       (url "https://github.com/intel/sycl-tla")
+                       (commit "v0.6")))
+                 (sha256
+                  (base32
+                   "132pji4w33i8nkyx0b48ijilgm2rs9n7qc21wixawq15gbmmasj8"))
+                 (file-name "sycl-tla-for-pytorch"))
+             "third_party/sycl-tla")))))
+    (arguments
+     (substitute-keyword-arguments (package-arguments python-pytorch)
+       ((#:phases phases)
+        #~(modify-phases #$phases
+            (add-after 'unpack 'use-torch-xpu-ops
+              (lambda _
+                (substitute* "caffe2/CMakeLists.txt"
+                  ((".*third_party/xpu\\.txt.*") "")
+                  (("if\\(NOT EXISTS .*/\\.git\"\\)") "if(FALSE)")
+                  (("COMMAND git (fetch|checkout) --quiet.*")
+                   "COMMAND true\n"))))
+            (add-after 'use-torch-xpu-ops 'use-dpcpp
+              (lambda* (#:key inputs #:allow-other-keys)
+                ;; The build looks for the compilers icx and icpx of the
+                ;; oneAPI toolkit and parses their product version; DPC++
+                ;; provides clang and clang++, and the date version in
+                ;; sycl/version.hpp.
+                (substitute* "cmake/Modules/FindSYCLToolkit.cmake"
+                  (("NAMES icx") "NAMES clang++")
+                  (("^ +parse_sycl_compiler_version\\(.*")
+                   (string-append
+                    "  file(STRINGS \"${SYCL_ROOT}/include/sycl/version.hpp\""
+                    " _version REGEX \"define __SYCL_COMPILER_VERSION\")\n"
+                    "  string(REGEX MATCH \"[0-9]+\" SYCL_COMPILER_VERSION"
+                    " \"${_version}\")\n"))
+                  ;; libOpenCL is not part of DPC++.
+                  (("HINTS \\$\\{SYCL_LIBRARY_DIR\\}" all)
+                   (string-append
+                    all " "
+                    (dirname
+                     (search-input-file inputs "lib/libOpenCL.so")))))
+                (with-directory-excursion "third_party/torch-xpu-ops"
+                  (substitute* (list "cmake/Modules/FindSYCL.cmake"
+                                     "cmake/Modules/FindSYCLToolkit.cmake")
+                    (("set\\(SYCL_EXECUTABLE_NAME icpx\\)")
+                     "set(SYCL_EXECUTABLE_NAME clang++)"))
+                  ;; Only the compilers of oneAPI define this macro; check
+                  ;; for SYCL as such instead.
+                  (substitute* "cmake/Modules/FindSYCLToolkit.cmake"
+                    (("\"__INTEL_LLVM_COMPILER\"\\)")
+                     "\"SYCL_LANGUAGE_VERSION\")")
+                    (("\"\\$\\{__INTEL_LLVM_COMPILER\\}\" \"\"")
+                     "\"${SYCL_LANGUAGE_VERSION}\" \"\""))
+                  ;; icpx flushes denormals to zero unless told otherwise;
+                  ;; Clang keeps them by default and lacks the option.
+                  (substitute* "cmake/BuildFlags.cmake"
+                    ((".*-no-ftz\\).*") "")
+                    ;; See CXXFLAGS below.
+                    (("set\\(SYCL_COMPILE_FLAGS \\$\\{SYCL_FLAGS\\}" all)
+                     (string-append all " -D_GLIBCXX11_USE_C99_COMPLEX=1")))
+                  ;; Since oneCCL 2022, libccl.so is the C API; the C++ API
+                  ;; of oneapi/ccl.hpp, which PyTorch uses, is libccl.so.1.
+                  (substitute* "cmake/Modules/FindXCCL.cmake"
+                    (("NAMES ccl") "NAMES libccl.so.1"))
+                  (substitute* "cmake/SYCL.cmake"
+                    (("COMMAND icpx --version") "COMMAND clang++ --version"))
+                  (substitute* "cmake/SYCLTLA.cmake"
+                    (("^ *FetchContent_Declare\\(" all)
+                     (string-append
+                      "  set(FETCHCONTENT_SOURCE_DIR_REPO-SYCL-TLA"
+                      " ${TORCH_ROOT}/third_party/sycl-tla)\n" all))))
+                ;; The SYCL-TLA kernels for flash attention are compiled ahead
+                ;; of time with ocloc, which intel-compute-runtime installs
+                ;; with its version in the name.
+                (let ((bin (string-append (dirname (getcwd)) "/ocloc-bin")))
+                  (mkdir-p bin)
+                  (symlink (car (find-files
+                                 #$(file-append
+                                    (this-package-native-input
+                                     "intel-compute-runtime")
+                                    "/bin")
+                                 "^ocloc-"))
+                           (string-append bin "/ocloc"))
+                  (setenv "PATH" (string-append bin ":" (getenv "PATH"))))
+                ;; oneDNN with SYCL serves both the CPU and the GPU, instead
+                ;; of a second, static oneDNN that the build would fetch.
+                (substitute* "aten/src/ATen/CMakeLists.txt"
+                  (("ATen_XPU_DEPENDENCY_LIBS xpu_mkldnn")
+                   "ATen_XPU_DEPENDENCY_LIBS DNNL::dnnl"))
+                ;; The configure test of libstdc++ for the C99 functions of
+                ;; complex.h fails in Guix: the libstdc++ headers on
+                ;; CPLUS_INCLUDE_PATH hide those of glibc.  Without them,
+                ;; c10 computes complex square roots in libc10, which
+                ;; kernels cannot call; define what the test would have
+                ;; found, here and in the flags of the kernels.
+                (setenv "CXXFLAGS" "-D_GLIBCXX11_USE_C99_COMPLEX=1")
+                (setenv "SYCL_ROOT" #$(this-package-native-input "dpcpp"))
+                (setenv "USE_XPU" "1")
+                ;; Kernels compiled at run time for any Intel GPU, instead of
+                ;; ahead of time with ocloc for a list of GPUs.
+                (setenv "TORCH_XPU_ARCH_LIST" "none")
+                ;; oneMKL is nonfree.
+                (setenv "USE_ONEMKL_XPU" "0")
+                ;; The process group xccl for distributed training.
+                (setenv "USE_XCCL" "1")
+                (setenv "CCL_ROOT" #$(this-package-input "oneccl"))))))))
+    (native-inputs
+     (modify-inputs (package-native-inputs python-pytorch)
+       (prepend dpcpp intel-compute-runtime)))
+    (inputs
+     (modify-inputs (package-inputs python-pytorch)
+       (delete "onednn")
+       (prepend oneccl onednn-sycl opencl-icd-loader)))
+    ;; As in dpcpp: let the Level Zero and OpenCL loaders of the SYCL
+    ;; runtime find the drivers, such as intel-compute-runtime, when both
+    ;; are in the same profile.
+    (native-search-paths
+     (append (package-native-search-paths level-zero/driver-path)
+             (package-native-search-paths opencl-icd-loader)))
+    (synopsis "Tensors and dynamic neural networks in Python, for Intel GPUs")
+    (description
+     "PyTorch is a Python package that provides two high-level features:
+@itemize
+@item tensor computation (like NumPy) with strong GPU acceleration;
+@item deep neural networks (DNNs) built on a tape-based autograd system.
+@end itemize
+This variant runs on Intel GPUs through SYCL, as the device @code{xpu}.  It
+is built with DPC++ and with oneDNN for SYCL.")))
