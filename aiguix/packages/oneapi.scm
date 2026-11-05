@@ -792,7 +792,11 @@ given with the property @code{NPU_PLATFORM}.  It is built on MLIR and
 includes the VPUNN cost model.  The prebuilt SHAVE kernels, which run
 operations such as Softmax on the vector cores of the NPU, are not part of
 this package: their source code is not public.  Without them, the compiler
-can only compile models whose operations run on the matrix units of the NPU.")
+can only compile models whose operations run on the matrix units of the NPU.
+Activations such as ReLU and conversions between data types also need the
+kernels, so most models fail to compile, among them every model with
+@code{f32} inputs or outputs; a model of matrix multiplications in
+@code{f16} compiles.")
       (license license:asl2.0))))
 
 ;; Needed by Intel Graphics Compiler, which requires this exact major version.
