@@ -230,3 +230,15 @@ programming accelerators such as GPUs in single-source C++.  It provides the
 @command{clang++} driver with @option{-fsycl}, and the SYCL runtime, which
 runs kernels on Intel GPUs through Level Zero or OpenCL.")
     (license license:asl2.0)))   ;with LLVM exceptions
+
+(define-public dpcpp-toolchain
+  (package
+    (inherit (make-clang-toolchain dpcpp libomp-23))
+    (home-page "https://github.com/intel/llvm")
+    (synopsis "Complete DPC++ toolchain for SYCL development")
+    (description
+     "This package provides a complete DPC++ toolchain for SYCL, C and C++
+development to be installed in user profiles.  This includes DPC++, as well
+as libc (headers and binaries, plus debugging symbols in the @code{debug}
+output), and Binutils.  Use it instead of @code{gcc-toolchain}, whose C++
+headers may not match the GCC that DPC++ uses.")))
