@@ -31,9 +31,15 @@
   #:use-module ((guix licenses) #:prefix license:)
   #:use-module (guix packages)
   #:use-module (guix utils)
+  #:use-module (gnu packages check)
+  #:use-module (gnu packages linux)
   #:use-module (gnu packages llvm)
-  #:use-module ((gnu packages oneapi) #:select (onednn))
+  #:use-module (gnu packages mpi)
+  #:use-module ((gnu packages oneapi) #:select (onednn umf))
   #:use-module (gnu packages opencl)
+  #:use-module (gnu packages parallel)
+  #:use-module (gnu packages profiling)
+  #:use-module ((aiguix packages oneapi) #:select (level-zero/driver-path))
   #:use-module (aiguix packages llvm))
 
 (define-public onemath
@@ -91,6 +97,119 @@ LAPACK, random number generators and discrete Fourier transforms, and runs
 them through a backend for the device.  This package has the generic BLAS
 backend of @code{generic-sycl-components}, which runs on any SYCL device,
 such as Intel GPUs through DPC++.")
+    (license license:asl2.0)))
+
+(define-public oneccl
+  (package
+    (name "oneccl")
+    (version "2022.2.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/uxlfoundation/oneCCL")
+             (commit version)))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0h7lndidjnxr4ivm6cr1imc9b7r4i7k7pc1i2f8rwwqvakdvzxvr"))
+       (modules '((guix build utils)))
+       ;; Binaries of Intel MPI and libfabric, and copies of hwloc, ITT,
+       ;; Level Zero, PMIx and UMF.
+       (snippet
+        #~(with-directory-excursion "deps/libccl/deps"
+            (for-each delete-file-recursively
+                      '("hwloc" "itt" "level_zero" "mpi" "ofi" "pmix"
+                        "umf"))))))
+    (build-system cmake-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      #~(list "-DCMAKE_C_COMPILER=clang"
+              "-DCMAKE_CXX_COMPILER=clang++"
+              (string-append "-Dittapi_SOURCE_DIR="
+                             #$(this-package-input "ittapi"))
+              ;; Only the tests of the API, which need no GPU and no MPI
+              ;; processes.
+              "-DONECCL_TEST_USE_MPI=OFF"
+              "-DONECCL_LIBCCL_BUILD_FT=OFF"
+              "-DONECCL_LIBCCL_BUILD_EXAMPLES=OFF"
+              "-DONECCL_LIBCCL_BUILD_REG_TESTS=OFF")
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack 'use-system-libraries
+            (lambda* (#:key inputs #:allow-other-keys)
+              ;; The Git submodules of ITT and GoogleTest.
+              (substitute* "deps/CMakeLists.txt"
+                (("^ *(require_submodule|add_subdirectory)\\((ittapi\
+|googletest).*") ""))
+              (substitute* "tests/CMakeLists.txt"
+                (("^function\\(add_test_internal\\)" all)
+                 (string-append "find_package(GTest REQUIRED)\n" all))
+                (("^( +)(gtest|gtest_main)\n" _ indentation target)
+                 (string-append indentation "GTest::" target "\n")))
+              ;; The CPU libccl.so.1 in lib/ccl/cpu/lib needs libccl.so.2
+              ;; from lib.
+              (substitute* "CMakeLists.txt"
+                (("-l:libccl\\.so\\.2 \\$\\{STATIC_INTEL_FLAG\\}" all)
+                 (string-append all " -Wl,-rpath," #$output "/lib")))
+              ;; DT_RPATH lets the CPU libccl.so.1 win over one in
+              ;; LD_LIBRARY_PATH; use DT_RUNPATH as everywhere in Guix.
+              (substitute* "plugins/legacy_cpu/CMakeLists.txt"
+                (("\"-Wl,--disable-new-dtags\"") ""))
+              (with-directory-excursion "deps/libccl"
+                (substitute* "CMakeLists.txt"
+                  (("\\$\\{DEPS_DIR\\}/itt/lib64")
+                   (string-append #$(this-package-input "ittapi") "/lib"))
+                  (("\\$\\{DEPS_DIR\\}/level_zero/include")
+                   (string-append #$(this-package-input "level-zero")
+                                  "/include/level_zero"))
+                  (("\\$\\{DEPS_DIR\\}/(hwloc|itt|mpi|ofi|pmix|umf)"
+                    _ dependency)
+                   (assoc-ref `(("hwloc"
+                                 . ,(ungexp (this-package-input "hwloc")
+                                            "lib"))
+                                ("itt" . ,#$(this-package-input "ittapi"))
+                                ("mpi" . ,#$(this-package-input "mpich"))
+                                ("ofi" . ,#$(this-package-input "libfabric"))
+                                ("pmix" . ,#$(this-package-input "openpmix"))
+                                ("umf" . ,#$(this-package-input "umf")))
+                              dependency)))
+                (substitute* "src/CMakeLists.txt"
+                  (("libhwloc\\.a") "libhwloc.so")
+                  ;; Not a copy of libfabric in the package.
+                  (("if \\(\"\\$\\{LIBFABRIC_DIR\\}\" STREQUAL \"\"\\)")
+                   "if(FALSE)"))
+                ;; Libraries that libccl loads at run time.
+                (substitute* (find-files "src/common/api_wrapper"
+                                         "\\.cpp$")
+                  (("\"(libze_loader\\.so|libpmix\\.so|libmpi\\.so\\.12\
+|libfabric\\.so\\.1)\"" _ library)
+                   (string-append
+                    "\"" (search-input-file inputs
+                                            (string-append "lib/" library))
+                    "\""))))))
+          (replace 'check
+            (lambda* (#:key tests? #:allow-other-keys)
+              ;; The tests are registered for this configuration only.
+              (when tests?
+                (invoke "ctest" "--output-on-failure" "-C" "unit_tests")))))))
+    (native-inputs (list dpcpp googletest))
+    (inputs
+     (list `(,hwloc "lib")
+           ittapi
+           level-zero/driver-path
+           libfabric
+           mpich
+           openpmix
+           umf))
+    (home-page "https://github.com/uxlfoundation/oneCCL")
+    (synopsis "Collective communication library for deep learning")
+    (description
+     "@acronym{oneCCL, oneAPI Collective Communications Library} provides
+collective operations such as all-reduce, all-gather and broadcast between
+processes that train or run neural networks, on CPUs and on Intel GPUs
+through SYCL.  It is the backend of the @code{xccl} process group of PyTorch.
+It transports data through libfabric or MPI.")
     (license license:asl2.0)))
 
 (define-public onednn-sycl
