@@ -506,7 +506,8 @@ typedef __UINT64_TYPE__ uint64_t;
         (base32 "0qf1jh1p2xvxm1zsr0ww8m3svdhg7amdfvh2j3idrh7n6bknnl23"))
        (modules '((guix build utils)))
        (snippet
-        ;; Remove the nonfree NPU firmware and the bundled Perfetto SDK.
+        ;; Remove the nonfree NPU firmware and the bundled Perfetto SDK;
+        ;; the SDK comes from the source of perfetto.
         #~(for-each delete-file-recursively
                     '("firmware/bin" "third_party/perfetto")))))
     (build-system cmake-build-system)
@@ -514,6 +515,9 @@ typedef __UINT64_TYPE__ uint64_t;
      (list
       #:configure-flags
       #~(list "-DENABLE_TOOLS_BUILD=ON"
+              ;; Tracing with Perfetto, turned on at run time with
+              ;; ZE_INTEL_NPU_LOGPERFETTO.
+              "-DENABLE_NPU_PERFETTO_BUILD=ON"
               ;; The validation tests need a real NPU.
               "-DENABLE_VALIDATION_BUILD=OFF")
       #:phases
@@ -534,6 +538,12 @@ typedef __UINT64_TYPE__ uint64_t;
                  (dirname
                   (search-input-file inputs
                                      "include/level_zero/ze_graph_ext.h"))))))
+          (add-after 'unpack 'use-perfetto-sdk
+            (lambda _
+              ;; The driver builds the SDK, two files, into itself.
+              (substitute* "third_party/cmake/perfetto.cmake"
+                (("\\$\\{CMAKE_CURRENT_SOURCE_DIR\\}/perfetto")
+                 #$(package-source perfetto)))))
           (replace 'check
             (lambda* (#:key tests? #:allow-other-keys)
               ;; The unit tests use mocks instead of a real NPU.  Skip the
