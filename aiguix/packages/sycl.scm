@@ -34,12 +34,15 @@
   #:use-module (gnu packages check)
   #:use-module (gnu packages linux)
   #:use-module (gnu packages llvm)
+  #:use-module (gnu packages logging)
   #:use-module ((gnu packages machine-learning) #:select (python-pytorch))
   #:use-module (gnu packages mpi)
   #:use-module ((gnu packages oneapi) #:select (onednn umf))
   #:use-module (gnu packages opencl)
   #:use-module (gnu packages parallel)
+  #:use-module (gnu packages pkg-config)
   #:use-module (gnu packages profiling)
+  #:use-module (gnu packages python)
   #:use-module ((aiguix packages oneapi)
                 #:select (intel-compute-runtime level-zero/driver-path))
   #:use-module (aiguix packages llvm))
@@ -256,6 +259,133 @@ It transports data through libfabric or MPI.")
 performance library of basic building blocks for deep learning applications.
 This variant is built with DPC++ and runs on Intel GPUs through SYCL as well
 as on CPUs, and includes the graph API.")))
+
+(define-public pti-gpu
+  (package
+    (name "pti-gpu")
+    (version "1.2.0")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/intel/pti-gpu")
+             (commit (string-append "pti-" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "14nj520z4cycv78mza64bz30i3w6hga3vp82v7sbx46w5yffidi8"))))
+    (build-system cmake-build-system)
+    (arguments
+     (list
+      #:configure-flags
+      ;; The IDs of the Level Zero functions are for an older Level Zero;
+      ;; add those of the newer functions, as upstream does on updates.
+      #~(list "-DPTI_API_ID_REGENERATE=ON"
+              "-DPTI_BUILD_SAMPLES=OFF"
+              "-DPTI_BUILD_URGEMM=OFF")
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack 'use-system-libraries
+            (lambda _
+              ;; The build would fetch ITT; take that of Guix, and the
+              ;; internal headers that it uses from the source of ITT.
+              (substitute* "sdk/cmake/Modules/macros.cmake"
+                (("if \\(NOT TARGET ittapi::ittnotify OR NOT TARGET \
+ittapi::headers\\)")
+                 (string-append
+                  "if (NOT TARGET ittapi::headers)\n"
+                  "    find_package(ittapi REQUIRED)\n"
+                  "    add_library(ittapi::headers INTERFACE IMPORTED)\n"
+                  "    set_target_properties(ittapi::headers PROPERTIES"
+                  " INTERFACE_INCLUDE_DIRECTORIES \""
+                  #$(this-package-input "ittapi") "/include;"
+                  #$(package-source ittapi) "/src/ittnotify\")\n"
+                  "  endif()\n"
+                  "  if (FALSE)")))
+              ;; Both load the Level Zero loader at run time.
+              (substitute* '("sdk/src/lz_api_tracing_api_loader.h"
+                             "sdk/src/levelzero/ze_wrappers.h"
+                             "sdk/src/metrics/metrics_handler.h"
+                             "tools/unitrace/src/levelzero/ze_loader.h")
+                (("\"libze_loader\\.so\\.1\"")
+                 (string-append "\""
+                                #$(this-package-input "level-zero")
+                                "/lib/libze_loader.so.1\"")))
+              ;; unitrace writes the Git commit into its version.
+              (substitute* "tools/unitrace/scripts/get_commit_hash.py"
+                ((".*subprocess\\.run\\(\\['git'.*") "")
+                (("result\\.stdout\\[0:len\\(result\\.stdout\\) - 1\\]")
+                 (string-append "\"pti-"
+                                #$(package-version this-package) "\"")))))
+          (add-after 'use-system-libraries 'change-directory
+            (lambda _
+              (chdir "sdk")))
+          (replace 'check
+            (lambda* (#:key tests? #:allow-other-keys)
+              ;; The functional tests, and these unit tests, need an Intel
+              ;; GPU.
+              (when tests?
+                (invoke "ctest" "--output-on-failure" "-L" "unit"
+                        "-E" (string-append
+                              "^(FlagCombinations|PcSamplingTest"
+                              "|ZeEventPool(Manager|sObserver)?Test)")))))
+          (add-after 'install 'install-unitrace
+            (lambda* (#:key inputs #:allow-other-keys)
+              (let ((build (string-append (getcwd) "/../unitrace")))
+                (mkdir-p build)
+                ;; The scripts of unitrace clone these repositories into
+                ;; the build directory unless they are there, and copy
+                ;; headers from them; ITT is built from its source.
+                (for-each
+                 (lambda (directory source)
+                   (copy-recursively source
+                                     (string-append build "/" directory))
+                   (for-each make-file-writable
+                             (find-files (string-append build "/"
+                                                        directory)
+                                         #:directories? #t)))
+                 '("compute-runtime" "level-zero" "ittapi")
+                 (list #$(package-source intel-compute-runtime)
+                       #$(package-source level-zero/driver-path)
+                       #$(package-source ittapi)))
+                (invoke "cmake" "-S" "../tools/unitrace" "-B" build
+                        "-DCMAKE_BUILD_TYPE=Release"
+                        (string-append "-DCMAKE_INSTALL_PREFIX=" #$output)
+                        "-DBUILD_WITH_MPI=0"
+                        ;; The output in the format of Perfetto needs a
+                        ;; static libprotobuf with hidden symbols, since
+                        ;; unitrace preloads its library into programs that
+                        ;; may have their own protobuf.  Perfetto also reads
+                        ;; the Chrome traces that unitrace writes.
+                        "-DBUILD_WITH_PERFETTO=OFF")
+                (invoke "cmake" "--build" build "--parallel"
+                        (number->string (parallel-job-count)))
+                (invoke "cmake" "--install" build)))))))
+    (native-inputs
+     (list googletest pkg-config python))
+    (inputs
+     (list dpcpp                        ;XPTI, for SYCL
+           ittapi
+           level-zero/driver-path
+           libomp-23                    ;OMPT, for OpenMP offload
+           opencl-headers
+           opencl-icd-loader
+           spdlog))
+    ;; As in dpcpp: let the Level Zero and OpenCL loaders find the
+    ;; drivers, such as intel-compute-runtime, when both are in the same
+    ;; profile.
+    (native-search-paths
+     (append (package-native-search-paths level-zero/driver-path)
+             (package-native-search-paths opencl-icd-loader)))
+    (home-page "https://github.com/intel/pti-gpu")
+    (synopsis "Profiling and tracing for Intel GPUs")
+    (description
+     "PTI (Profiling Tools Interfaces for GPU) provides @code{libpti_view},
+a library that records the activity of Intel GPUs through Level Zero, such as
+kernels, memory copies and synchronization, for profilers such as that of
+PyTorch.  It also provides @command{unitrace}, which traces programs that use
+Level Zero, OpenCL or SYCL without changing them, and reports the time of
+kernels and API calls, a timeline for Perfetto and hardware metrics.")
+    (license license:expat)))
 
 (define-public python-pytorch-xpu
   (package
