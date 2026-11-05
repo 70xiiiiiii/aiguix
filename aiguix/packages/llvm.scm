@@ -152,8 +152,7 @@ IMPORTED_GLOBAL TRUE\\)" all)
                    (sha256
                     (base32
                      "141kidgrij39j5psmgpsm2yl86rz0whp1mra60m5wkbh60aaffr6"))
-                   (file-name "spirv-headers-for-dpcpp")))
-              "-DUMF_LINK_HWLOC_STATICALLY=OFF"))
+                   (file-name "spirv-headers-for-dpcpp")))))
            #$flags
            ;; After the flags of LLVM, so that these win: the combined
            ;; libLLVM forms a dependency cycle with the static libraries
