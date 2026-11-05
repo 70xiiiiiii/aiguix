@@ -350,7 +350,8 @@ ittapi::headers\\)")
                 (invoke "cmake" "-S" "../tools/unitrace" "-B" build
                         "-DCMAKE_BUILD_TYPE=Release"
                         (string-append "-DCMAKE_INSTALL_PREFIX=" #$output)
-                        "-DBUILD_WITH_MPI=0"
+                        ;; libunitrace_mpi, for tracing MPI programs.
+                        "-DBUILD_WITH_MPI=1"
                         ;; The output in the format of Perfetto needs a
                         ;; static libprotobuf with hidden symbols, since
                         ;; unitrace preloads its library into programs that
@@ -367,6 +368,7 @@ ittapi::headers\\)")
            ittapi
            level-zero/driver-path
            libomp-23                    ;OMPT, for OpenMP offload
+           mpich
            opencl-headers
            opencl-icd-loader
            spdlog))
@@ -384,7 +386,11 @@ a library that records the activity of Intel GPUs through Level Zero, such as
 kernels, memory copies and synchronization, for profilers such as that of
 PyTorch.  It also provides @command{unitrace}, which traces programs that use
 Level Zero, OpenCL or SYCL without changing them, and reports the time of
-kernels and API calls, a timeline for Perfetto and hardware metrics.")
+kernels and API calls, a timeline for Perfetto and hardware metrics.  It
+also traces the MPI calls of programs run with @command{mpiexec}.
+@command{unitrace} needs a Level Zero driver for Intel GPUs, such as
+@code{intel-compute-runtime}, in the same profile, even for programs that do
+not use the GPU.")
     (license license:expat)))
 
 (define-public python-pytorch-xpu
