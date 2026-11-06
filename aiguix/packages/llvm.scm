@@ -34,15 +34,13 @@
   #:use-module (gnu packages datastructures)
   #:use-module (gnu packages llvm)
   #:use-module (gnu packages mpi)
-  #:use-module ((gnu packages oneapi)
-                #:hide (intel-compute-runtime vc-intrinsics))
+  ;; Only umf: intel-compute-runtime, intel-graphics-compiler and
+  ;; vc-intrinsics come from (aiguix packages oneapi).
+  #:use-module ((gnu packages oneapi) #:select (umf))
   #:use-module (gnu packages opencl)
   #:use-module (gnu packages vulkan)
   #:use-module (aiguix packages datastructures)
-  #:use-module ((aiguix packages oneapi)
-                #:select (intel-compute-runtime
-                          level-zero/driver-path
-                          vc-intrinsics)))
+  #:use-module (aiguix packages oneapi))
 
 ;; Like make-llvm-rocm in Guix: the fork builds LLVM, Clang and the SYCL
 ;; projects in one CMake run.
