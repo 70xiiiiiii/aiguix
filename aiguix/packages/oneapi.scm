@@ -387,7 +387,7 @@ Intel GPUs and the NPU of Intel CPUs.  On the NPU, it needs
 
 (define-public intel-compute-runtime
   (package
-    (inherit (@ (gnu packages oneapi) intel-compute-runtime))
+    (name "intel-compute-runtime")
     (version "26.40.40196.8")
     (source
      (origin
@@ -395,17 +395,64 @@ Intel GPUs and the NPU of Intel CPUs.  On the NPU, it needs
        (uri (git-reference
              (url "https://github.com/intel/compute-runtime")
              (commit version)))
-       (file-name (git-file-name "intel-compute-runtime" version))
+       (file-name (git-file-name name version))
        (sha256
         (base32 "00255v5gnsm4jxncxxzh94iwb93jkljly9l9f94qw7h74imp8g2z"))))
-    (inputs
-     (modify-inputs (package-inputs
-                     (@ (gnu packages oneapi) intel-compute-runtime))
-       (replace "intel-graphics-compiler" intel-graphics-compiler)))
-    (native-inputs
-     (modify-inputs (package-native-inputs
-                     (@ (gnu packages oneapi) intel-compute-runtime))
-       (replace "level-zero" level-zero)))))
+    (build-system cmake-build-system)
+    (arguments
+     (list
+      #:tests? #f
+      #:configure-flags
+      #~(let ((igc #$(this-package-input "intel-graphics-compiler")))
+          (list
+           ;; #:tests? #f does not keep the build from compiling the unit
+           ;; tests, which takes long and much disk space.
+           "-DNEO_SKIP_UNIT_TESTS=1"
+           ;; The NEO_* environment variables, such as
+           ;; NEO_OverridePreemptionSurfaceSizeInMb, work in the release
+           ;; build.
+           "-DRELEASE_WITH_REGKEYS=TRUE"
+           ;; Only the DRM driver model of Linux, not the one of WSL.
+           "-DDISABLE_WDDM_LINUX=TRUE"
+           ;; ocloc loads libigdfcl.so.2 from there while it compiles the
+           ;; built-in kernels during the build.
+           (string-append "-DIGC_DIR=" igc)
+           ;; The default is /etc/OpenCL/vendors; opencl-icd-loader finds
+           ;; the file in the profile through OCL_ICD_VENDORS.
+           (string-append "-DOCL_ICD_VENDORDIR="
+                          #$output "/etc/OpenCL/vendors")
+           "-DCMAKE_BUILD_WITH_INSTALL_RPATH=ON"
+           ;; ocloc needs libocloc.so, which CMake installs without
+           ;; setting its RPATH, and the drivers load libigdfcl.so.2 and
+           ;; libigc.so with dlopen by their bare names.
+           (string-append "-DCMAKE_INSTALL_RPATH="
+                          #$output "/lib;"
+                          igc "/lib")))
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack 'allow-rpath
+            (lambda _
+              ;; CMakeLists.txt force-sets CMAKE_SKIP_RPATH to YES,
+              ;; overriding every RPATH flag above -- confirmed by
+              ;; rebuilds showing only glibc/gcc's implicit defaults
+              ;; in RUNPATH. Upstream relies on system ldconfig
+              ;; instead, which doesn't apply to Guix's store layout.
+              (substitute* "CMakeLists.txt"
+                (("set\\(CMAKE_SKIP_RPATH YES CACHE BOOL \"\" FORCE\\)")
+                 "set(CMAKE_SKIP_RPATH NO CACHE BOOL \"\" FORCE)")))))))
+    (inputs (list gmmlib intel-graphics-compiler libva zlib))
+    (native-inputs (list level-zero pkg-config))
+    (home-page "https://github.com/intel/compute-runtime")
+    (synopsis
+     "Intel Graphics Compute Runtime for oneAPI Level Zero and OpenCL")
+    (description
+     "NEO (intel-compute-runtime) implements the OpenCL 3.0
+and oneAPI Level Zero APIs for Intel GPUs, from integrated graphics
+(Tiger Lake through Panther Lake) through discrete cards (DG1, Arc
+Alchemist, Arc Battlemage).  It loads the Intel Graphics Compiler at
+runtime to JIT-compile OpenCL C/SPIR-V kernels submitted by
+applications into Intel GPU machine code.")
+    (license license:expat)))
 
 (define-public intel-graphics-compiler
   (package
