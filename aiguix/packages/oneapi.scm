@@ -33,6 +33,7 @@
   #:use-module ((guix licenses) #:prefix license:)
   #:use-module (guix packages)
   #:use-module (guix utils)
+  #:use-module (gnu packages)
   #:use-module (gnu packages algebra)
   #:use-module (gnu packages bash)
   #:use-module (gnu packages bison)
@@ -879,42 +880,81 @@ kernels, so most models fail to compile, among them every model with
 ;; Needed by Intel Graphics Compiler, which requires this exact major version.
 (define-public opencl-clang-22
   (package
-    (inherit opencl-clang)
+    (name "opencl-clang")
     (version "22.1.4")
     (source
      (origin
-       (inherit (package-source opencl-clang))
+       (method git-fetch)
        (uri (git-reference
              (url "https://github.com/intel/opencl-clang")
              (commit (string-append "v" version))))
-       (file-name (git-file-name "opencl-clang" version))
+       (file-name (git-file-name name version))
        (sha256
-        (base32 "19416b7g4wbjfmibzgr33b1sd7yh5h1zn999064jbkfgkwp4gpd5"))))
+        (base32 "19416b7g4wbjfmibzgr33b1sd7yh5h1zn999064jbkfgkwp4gpd5"))
+       ;; LLVM and Clang lie in separate prefixes, as in opencl-clang of
+       ;; Guix.
+       (patches (search-patches
+                 "opencl-clang-separate-llvm-clang-prefix.patch"))))
+    (build-system cmake-build-system)
     (arguments
-     (substitute-keyword-arguments (package-arguments opencl-clang)
-       ;; The flags of opencl-clang name the inputs of opencl-clang.
-       ((#:configure-flags _)
-        #~(let ((llvm #$(this-package-input "llvm"))
-                (clang #$(this-package-input "clang")))
-            (list (string-append "-DPREFERRED_LLVM_VERSION="
-                                 #$(package-version llvm-22))
-                  (string-append "-DLLVM_DIR=" llvm "/lib/cmake/llvm")
-                  (string-append "-DClang_DIR=" clang "/lib/cmake/clang")
-                  "-DLLVMSPIRV_INCLUDED_IN_LLVM=OFF"
-                  (string-append "-DSPIRV_TRANSLATOR_DIR="
-                                 #$(this-package-input
-                                    "spirv-llvm-translator"))
-                  "-DLLVM_INCLUDE_TESTS=ON"
-                  (string-append "-DLLVM_EXTERNAL_LIT="
-                                 #$(this-package-native-input "python-lit")
-                                 "/bin/lit")
-                  (string-append "-DCLANG_TOOLS_DIR=" clang "/bin"))))))
+     (list
+      #:configure-flags
+      #~(let ((llvm #$(this-package-input "llvm"))
+              (clang #$(this-package-input "clang")))
+          (list
+           ;; The version of LLVM that the build looks for.
+           (string-append "-DPREFERRED_LLVM_VERSION="
+                          #$(package-version llvm-22))
+           ;; LLVM and Clang of Guix, instead of building them in-tree.
+           (string-append "-DLLVM_DIR=" llvm "/lib/cmake/llvm")
+           (string-append "-DClang_DIR=" clang "/lib/cmake/clang")
+           ;; The SPIR-V translator is a package of its own.
+           "-DLLVMSPIRV_INCLUDED_IN_LLVM=OFF"
+           (string-append "-DSPIRV_TRANSLATOR_DIR="
+                          #$(this-package-input "spirv-llvm-translator"))
+           ;; Set up the tests, with lit of Guix: an in-tree build of LLVM
+           ;; would provide it.
+           "-DLLVM_INCLUDE_TESTS=ON"
+           (string-append "-DLLVM_EXTERNAL_LIT="
+                          #$(this-package-native-input "python-lit")
+                          "/bin/lit")
+           ;; The tests look for clang next to the tools of LLVM; here it
+           ;; lies in a separate prefix.
+           (string-append "-DCLANG_TOOLS_DIR=" clang "/bin")))
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack 'adjust-tests
+            (lambda _
+              ;; The tests look for occ-cli next to LLVM, as in an in-tree
+              ;; build; with an external LLVM it lies in the build directory.
+              (substitute* "tests/lit.site.cfg.py.in"
+                (((string-append "opencl_clang_tools_dir = "
+                                 "lit_config\\.substitute\\(path\\("
+                                 "r\"@LLVM_TOOLS_DIR@"))
+                 (string-append "opencl_clang_tools_dir = "
+                                "lit_config.substitute(path("
+                                "r\"@CMAKE_CURRENT_BINARY_DIR@/occ-cli")))
+              ;; This test uses -cl-std=CL3.1, which Clang 22 rejects:
+              ;; opencl-clang carries the patches for it in patches/clang
+              ;; and applies them only when it builds Clang itself.
+              (substitute* "tests/lit.cfg.py"
+                (("\"Conformance\"\\]")
+                 "\"Conformance\", \"cl-ext-option.cl\"]"))))
+          ;; The tests are a target of the build, not registered with CTest.
+          (replace 'check
+            (lambda* (#:key tests? #:allow-other-keys)
+              (when tests?
+                (invoke "cmake" "--build" "."
+                        "--target" "check-opencl-clang")))))))
+    (native-inputs (list pkg-config python-lit))
     (inputs (list llvm-22 clang-22 spirv-llvm-translator-22))
-    (synopsis "Clang-based compiler for OpenCL targeting SPIR-V, for LLVM 22")
+    (home-page "https://github.com/intel/opencl-clang")
+    (synopsis "OpenCL C compiler library for Intel GPUs, for LLVM 22")
     (description
-     "A standalone build of Intel's opencl-clang (libopencl-clang)
-against a prebuilt LLVM/Clang 22, as used by Intel Graphics Compiler in
-Prebuilds mode.")))
+     "opencl-clang is a library that compiles OpenCL C to LLVM IR and SPIR-V
+with Clang.  Intel Graphics Compiler loads it to compile the OpenCL C
+kernels of applications.  This variant is built against LLVM 22.")
+    (license license:asl2.0)))   ;with LLVM exceptions
 
 (define-public openvino-genai
   (package
