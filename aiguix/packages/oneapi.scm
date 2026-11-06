@@ -1650,7 +1650,11 @@ adds the @command{optimum-cli export openvino} command.")
              (commit (string-append "v" version))))
        (file-name (git-file-name "vc-intrinsics" version))
        (sha256
-        (base32 "1rah6vlv9niqs8lmv21dlmjz7b60y2lc22wg3r2wnanfh4jrgb8l"))))))
+        (base32 "1rah6vlv9niqs8lmv21dlmjz7b60y2lc22wg3r2wnanfh4jrgb8l"))))
+    ;; The latest LLVM; Intel Graphics Compiler and DPC++ build this
+    ;; package from its source with their own LLVM.
+    (inputs
+     (modify-inputs inputs (replace "llvm" llvm-23)))))
 
 (define-public xpumanager
   (package
