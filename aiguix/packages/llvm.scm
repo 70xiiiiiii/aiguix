@@ -94,6 +94,9 @@ IMPORTED_GLOBAL TRUE\\)" all)
                               (@@ (gnu packages commencement) gcc-final)
                               "lib"))
               (string-append "-DC_INCLUDE_DIRS=" libc "/include")
+              ;; The projects that buildbot/configure.py of DPC++ builds:
+              ;; Clang, and the SYCL runtime with its tools, which lie
+              ;; outside llvm/ and are therefore external projects.
               (string-append "-DLLVM_ENABLE_PROJECTS=clang;sycl;llvm-spirv;"
                              "opencl;xpti;xptifw;libdevice;sycl-jit")
               (string-append "-DLLVM_EXTERNAL_PROJECTS=sycl;llvm-spirv;"
@@ -124,6 +127,8 @@ IMPORTED_GLOBAL TRUE\\)" all)
               ;; and, without .git, from the build date; this is the date of
               ;; the release commit.  Libraries compare it to enable features.
               "-DSYCL_COMPILER_VERSION=20261014"
+              ;; The host, and SPIR-V, the format of the device code for
+              ;; Intel GPUs, as in buildbot/configure.py.
               "-DLLVM_TARGETS_TO_BUILD=X86;SPIRV"
               ;; The SYCL runtime skips the first Level Zero adapter on
               ;; recent GPUs, so build the second one as well.
@@ -131,6 +136,9 @@ IMPORTED_GLOBAL TRUE\\)" all)
               ;; The offload tools compress device images with zstd; the
               ;; SYCL runtime must be able to decompress them.
               "-DLLVM_ENABLE_ZSTD=ON"
+              ;; #:tests? #f does not keep the tests from being built.  The
+              ;; end-to-end tests of SYCL need a GPU, and the lit tests of
+              ;; LLVM, Clang and SYCL would take hours.
               "-DLLVM_INCLUDE_TESTS=OFF"
               "-DSYCL_INCLUDE_TESTS=OFF"
               "-DXPTI_ENABLE_TESTS=OFF"
@@ -162,15 +170,17 @@ IMPORTED_GLOBAL TRUE\\)" all)
         #~(modify-phases #$phases
             (add-after 'change-directory 'set-glibc-file-names
               (lambda* (#:key inputs #:allow-other-keys)
-                ;; The parts of clang-18.0-libc-search-path.patch of Guix
-                ;; that make the driver find glibc and libstdc++; the patch
-                ;; itself does not apply to this fork.
+                ;; The parts of clang-18.0-libc-search-path.patch, which Guix
+                ;; applies to Clang 18 and later, that make the driver find
+                ;; glibc and libstdc++; the patch itself does not apply to
+                ;; the source of DPC++.
                 (let ((libc (assoc-ref inputs "libc"))
                       (gcc (assoc-ref inputs "gcc")))
                   (substitute* "../clang/lib/Driver/ToolChains/Linux.cpp"
                     ;; The dynamic linker of glibc.
                     (("(^[[:blank:]]+LibDir = ).*" _ declaration)
                      (string-append declaration "\"" libc "/lib\";\n"))
+                    ;; The C++ headers of libstdc++.
                     (("LibStdCXXIncludePathCandidates\\[\\] = \\{")
                      (string-append "LibStdCXXIncludePathCandidates[] = { \""
                                     gcc "/include/c++\","))
@@ -209,9 +219,9 @@ OSLibDir, Paths\\);" all)
                `(,zstd "lib"))))
     ;; The SYCL headers include CL/cl.h.
     (propagated-inputs (list opencl-headers))
-    ;; The include and library paths of Clang, and let the Level Zero and
-    ;; OpenCL loaders find the drivers, such as intel-compute-runtime, when
-    ;; both are in the same profile.
+    ;; Set the search paths in the profile for the headers and libraries
+    ;; of Clang, and those with which the Level Zero and OpenCL loaders
+    ;; find their drivers, e.g. intel-compute-runtime.
     (native-search-paths
      (append (package-native-search-paths clang-23)
              (package-native-search-paths level-zero/driver-path)
