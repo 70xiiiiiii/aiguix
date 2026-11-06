@@ -46,6 +46,8 @@
     (arguments
      (list
       #:configure-flags
+      ;; The examples are not installed; the tests are only built with
+      ;; WITH_TESTS.
       #~(list "-DWITH_EXAMPLES=OFF" "-DWITH_TESTS=ON")))
     (home-page "https://github.com/ktprime/emhash")
     (synopsis "Fast and memory-efficient C++ hash maps")
