@@ -28,10 +28,11 @@
   #:use-module (gnu packages llvm)
   #:use-module (gnu packages vulkan))
 
-;; Needed by Intel Graphics Compiler, which requires this exact major version.
+;; Needed by Intel Graphics Compiler 2.42.6, which requires this exact major
+;; version.
 (define-public spirv-llvm-translator-22
   (package
-    (inherit spirv-llvm-translator-17)
+    (inherit spirv-llvm-translator)
     (version "22.1.8")
     (source
      (origin
@@ -43,14 +44,14 @@
        (sha256
         (base32 "1xgdsn12dxx6vrncyv0ji58xm6kpa22243xrxg2gn30g6m83ll8i"))))
     (inputs
-     (modify-inputs (package-inputs spirv-llvm-translator-17)
+     (modify-inputs inputs
        (replace "llvm" llvm-22)))
     (native-inputs
-     (modify-inputs (package-native-inputs spirv-llvm-translator-17)
+     (modify-inputs native-inputs
        (replace "clang" clang-22)
        (replace "llvm" llvm-22)
-       ;; The commit in spirv-headers-tag.conf, which is in no release of
-       ;; SPIRV-Headers.
+       ;; The exact SPIRV-Headers version this package needs, as named in
+       ;; spirv-headers-tag.conf.
        (replace "spirv-headers"
          (origin
            (method git-fetch)
