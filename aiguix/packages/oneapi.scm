@@ -560,8 +560,7 @@ applications into Intel GPU machine code.")
            python-pyyaml
            spirv-headers-1.4.357.0
            spirv-llvm-translator-22
-           spirv-tools-for-igc
-           vc-intrinsics))
+           spirv-tools-for-igc))
     (home-page "https://github.com/intel/intel-graphics-compiler")
     (synopsis "Intel Graphics Compiler for OpenCL")
     (description
