@@ -35,14 +35,17 @@
   #:use-module (guix utils)
   #:use-module (gnu packages algebra)
   #:use-module (gnu packages bash)
+  #:use-module (gnu packages bison)
   #:use-module (gnu packages check)
   #:use-module (gnu packages cmake)
+  #:use-module (gnu packages compiler-tools)
   #:use-module (gnu packages compression)
   #:use-module (gnu packages cpp)
   #:use-module (gnu packages curl)
   #:use-module (gnu packages dns)
   #:use-module (gnu packages graphviz)
   #:use-module (gnu packages image-processing)
+  #:use-module (gnu packages libedit)
   #:use-module (gnu packages linux)
   #:use-module (gnu packages llvm)
   #:use-module (gnu packages logging)
@@ -53,6 +56,7 @@
                           sentencepiece
                           tensorflow-lite))
   #:use-module (gnu packages mpi)
+  #:use-module (gnu packages ncurses)
   #:use-module (gnu packages oneapi)
   #:use-module (gnu packages opencl)
   #:use-module (gnu packages pciutils)
@@ -72,6 +76,7 @@
   #:use-module (gnu packages tls)
   #:use-module ((gnu packages version-control) #:select (git-minimal))
   #:use-module (gnu packages video)
+  #:use-module (gnu packages vulkan)
   #:use-module (gnu packages web)
   #:use-module (gnu packages xml)
   #:use-module (gnu packages xorg)
@@ -404,7 +409,7 @@ Intel GPUs and the NPU of Intel CPUs.  On the NPU, it needs
 
 (define-public intel-graphics-compiler
   (package
-    (inherit (@ (gnu packages oneapi) intel-graphics-compiler))
+    (name "intel-graphics-compiler")
     (version "2.42.6")
     (source
      (origin
@@ -412,84 +417,109 @@ Intel GPUs and the NPU of Intel CPUs.  On the NPU, it needs
        (uri (git-reference
              (url "https://github.com/intel/intel-graphics-compiler")
              (commit (string-append "v" version))))
-       (file-name (git-file-name "intel-graphics-compiler" version))
+       (file-name (git-file-name name version))
        (sha256
         (base32 "08j9nqh1v30x8iy69rk0limpj1xjl4h32p8fs8fix0cqazgrn7s0"))
+       (modules '((guix build utils)))
        (snippet
         #~(begin
-            (use-modules (guix build utils))
-            ;; As in Guix, for the clang headers of LLVM 22: replace the
-            ;; stdint.h that IRBuilderGeneratorCodeGen.cmake takes from the
-            ;; first of these directories that exists.
-            (for-each
-             (lambda (v)
-               (let* ((headers-dir (string-append
-                                    "external/llvm/releases/" v
-                                    "/clang/lib/Headers"))
-                      (stdint.h (string-append headers-dir "/stdint.h")))
-                 (when (file-exists? headers-dir)
-                   (when (file-exists? stdint.h)
-                     (delete-file stdint.h))
-                   (call-with-output-file stdint.h
-                     (lambda (port)
-                       (display "#ifndef IGC_PORTABLE_STDINT_H
-#define IGC_PORTABLE_STDINT_H
-typedef __INT8_TYPE__ int8_t;
-typedef __INT16_TYPE__ int16_t;
-typedef __INT32_TYPE__ int32_t;
-typedef __INT64_TYPE__ int64_t;
-typedef __UINT8_TYPE__ uint8_t;
-typedef __UINT16_TYPE__ uint16_t;
-typedef __UINT32_TYPE__ uint32_t;
-typedef __UINT64_TYPE__ uint64_t;
-#endif
-" port))))))
-             '("22" "22.0.0" "22.1.8"))
+            ;; IRBuilderGeneratorCodeGen.cmake compiles some sources with
+            ;; clang for x86_64-pc-windows, with -nostdinc and the copy of
+            ;; the clang headers that IGC ships.  CPLUS_INCLUDE_PATH still
+            ;; reaches clang, so their stdint.h would include the one of
+            ;; glibc, where int64_t is long, which has 32 bits on Windows.
+            ;; Without a hosted C library it does not.
+            (substitute* "IGC/cmake/IRBuilderGeneratorCodeGen.cmake"
+              (("-target x86_64-pc-windows" all)
+               (string-append all " -ffreestanding")))
             ;; LLVMModule->dump() only exists when LLVM is built with
             ;; assertions, which the LLVM of Guix is not.
             (substitute* "IGC/AdaptorOCL/dllInterfaceCompute.cpp"
               (("LLVMModule->dump\\(\\);") ";"))))))
+    (build-system cmake-build-system)
     (arguments
-     (substitute-keyword-arguments
-         (package-arguments (@ (gnu packages oneapi) intel-graphics-compiler))
-       ;; The flags of the IGC of Guix name its inputs, for LLVM 17.
-       ((#:configure-flags _)
-        #~(let ((clang #$(this-package-native-input "clang"))
-                (lld #$(this-package-native-input "lld"))
-                (llvm #$(this-package-native-input "llvm"))
-                (opencl-clang #$(this-package-native-input "opencl-clang"))
-                (spirv-llvm-translator
-                 #$(this-package-native-input "spirv-llvm-translator")))
-            (list "-DIGC_OPTION__LLVM_MODE=Prebuilds"
-                  (string-append "-DIGC_OPTION__LLVM_PREFERRED_VERSION="
-                                 #$(package-version llvm-22))
-                  (string-append "-DCMAKE_INSTALL_PREFIX=" #$output)
-                  ;; CMake does not add these to the RPATH by itself.
-                  "-DCMAKE_INSTALL_RPATH_USE_LINK_PATH=ON"
-                  (string-append "-DCMAKE_INSTALL_RPATH="
-                                 llvm "/lib;"
-                                 #$(this-package-input "zlib") "/lib;"
-                                 opencl-clang "/lib;"
-                                 spirv-llvm-translator "/lib")
-                  (string-append "-DCMAKE_PREFIX_PATH="
-                                 llvm ";"
-                                 spirv-llvm-translator ";" opencl-clang)
-                  (string-append "-DIGC_OPTION__LLDELF_LIB_DIR=" lld)
-                  (string-append "-DIGC_OPTION__LLD_BIN_DIR=" lld)
-                  (string-append "-DIGC_OPTION__LLDELF_H_DIR=" lld)
-                  (string-append "-DIGC_OPTION__OPENCL_HEADER_PATH="
-                                 clang "/lib/clang/"
-                                 #$(version-major (package-version llvm-22))
-                                 "/include/opencl-c.h")
-                  "-DCMAKE_INSTALL_LIBDIR=lib")))))
+     (list
+      #:tests? #f
+      #:configure-flags
+      #~(let ((clang #$(this-package-native-input "clang"))
+              (lld #$(this-package-native-input "lld"))
+              (llvm #$(this-package-native-input "llvm"))
+              (opencl-clang #$(this-package-native-input "opencl-clang"))
+              (spirv-llvm-translator
+               #$(this-package-native-input "spirv-llvm-translator"))
+              (zlib #$(this-package-input "zlib")))
+          (list "-DIGC_OPTION__LLVM_MODE=Prebuilds"
+                (string-append "-DIGC_OPTION__LLVM_PREFERRED_VERSION="
+                               #$(package-version llvm-22))
+                (string-append "-DCMAKE_INSTALL_PREFIX=" #$output)
+                ;; libigc and libigdfcl link against LLVM, zlib, opencl-clang
+                ;; and the translator; CMake does not add them to the RPATH
+                ;; by itself.
+                "-DCMAKE_INSTALL_RPATH_USE_LINK_PATH=ON"
+                (string-append "-DCMAKE_INSTALL_RPATH="
+                               llvm "/lib;"
+                               zlib "/lib;"
+                               opencl-clang "/lib;"
+                               spirv-llvm-translator "/lib")
+                (string-append "-DCMAKE_PREFIX_PATH="
+                               llvm ";"
+                               spirv-llvm-translator ";" opencl-clang)
+                ;; The defaults point to prebuilt LLD for Windows.
+                (string-append "-DIGC_OPTION__LLDELF_LIB_DIR=" lld)
+                (string-append "-DIGC_OPTION__LLD_BIN_DIR=" lld)
+                (string-append "-DIGC_OPTION__LLDELF_H_DIR=" lld)
+                ;; The opencl-c.h of clang; without it, the build searches
+                ;; the directory of the clang binary for the file.
+                (string-append "-DIGC_OPTION__OPENCL_HEADER_PATH="
+                               clang "/lib/clang/"
+                               #$(version-major (package-version llvm-22))
+                               "/include/opencl-c.h")
+                "-DCMAKE_INSTALL_LIBDIR=lib"))
+      #:phases
+      #~(modify-phases %standard-phases
+          ;; IGC builds vc-intrinsics, SPIRV-Tools and SPIRV-Headers with
+          ;; itself and looks for them next to its source directory.
+          (add-after 'unpack 'add-vc-intrinsics
+            (lambda _
+              (copy-recursively #$(package-source vc-intrinsics)
+                                "../vc-intrinsics")))
+          (add-after 'unpack 'add-spirv-tools
+            (lambda _
+              (copy-recursively #$(package-source spirv-tools-for-igc)
+                                "../SPIRV-Tools")))
+          (add-after 'unpack 'add-spirv-headers
+            (lambda _
+              (copy-recursively #$(package-source spirv-headers-1.4.357.0)
+                                "../SPIRV-Headers")))
+          ;; As in Guix, build in a subdirectory of the source.
+          (replace 'configure
+            (lambda* (#:key configure-flags #:allow-other-keys)
+              (mkdir-p "build")
+              (chdir "build")
+              (apply invoke "cmake" ".." configure-flags))))))
+    (inputs (list libedit ncurses zlib zstd))
     (native-inputs
-     (modify-inputs (package-native-inputs
-                     (@ (gnu packages oneapi) intel-graphics-compiler))
-       (replace "clang" clang-22)
-       (replace "lld" lld-22)
-       (replace "llvm" llvm-22)
-       (replace "opencl-clang" opencl-clang-22)
-       (replace "spirv-llvm-translator" spirv-llvm-translator-22)))))
+     (list bison
+           clang-22
+           flex
+           git-minimal
+           lld-22
+           llvm-22
+           opencl-clang-22
+           pkg-config
+           python
+           python-mako
+           python-pyyaml
+           spirv-headers-1.4.357.0
+           spirv-llvm-translator-22
+           spirv-tools-for-igc
+           vc-intrinsics))
+    (home-page "https://github.com/intel/intel-graphics-compiler")
+    (synopsis "Intel Graphics Compiler for OpenCL")
+    (description
+     "The Intel Graphics Compiler (IGC) is an LLVM-based compiler for OpenCL
+targeting Intel graphics hardware.")
+    (license license:expat)))
 
 (define-public linux-npu-driver
   (package
