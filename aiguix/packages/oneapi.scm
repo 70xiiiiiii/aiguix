@@ -1673,14 +1673,22 @@ adds the @command{optimum-cli export openvino} command.")
     (arguments
      (list
       #:configure-flags
-      ;; GCC 14 warns about unused results of write(2), and the project
-      ;; builds with -Werror.
-      #~(list "-Dwerror=false" "-Duse_system_levelzero=true"
-              "-Duse_system_igsc=true" "-Dwith_tests=true")
+      #~(list
+         ;; Upstream sets werror=true, but GCC warns about the result of
+         ;; write(2) even when a test casts it to void; keep that one a
+         ;; warning.
+         "-Dcpp_args=-Wno-error=unused-result"
+         ;; Upstream leaves the unit tests out by default, as they need
+         ;; doctest; it is a native input here.
+         "-Dwith_tests=true")
       #:phases
       #~(modify-phases %standard-phases
           (add-after 'unpack 'fix-paths
             (lambda* (#:key inputs #:allow-other-keys)
+              ;; The PCI ID database is not in /usr/share/hwdata, and
+              ;; /bin/sh does not exist in the build environment; the
+              ;; crash log tools and the collection of debug logs run
+              ;; commands with "sh -c".
               (substitute* "oal/lin/pci_database.cpp"
                 (("\"/usr/share/hwdata/pci.ids\"")
                  (string-append "\""
@@ -1698,7 +1706,7 @@ adds the @command{optimum-cli export openvino} command.")
                   eudev
                   fmt
                   hwdata
-                  (list hwloc "lib")
+                  `(,hwloc "lib")
                   igsc
                   level-zero/driver-path
                   libpciaccess
