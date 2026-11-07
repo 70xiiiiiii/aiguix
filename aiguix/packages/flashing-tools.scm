@@ -51,6 +51,9 @@
       ;; googletest at configure time.
       #:tests? #f
       #:configure-flags
+      ;; Upstream builds only a static library by default.  With a shared
+      ;; one, an update of metee reaches igsc and xpumanager without
+      ;; rebuilding them.
       #~(list "-DBUILD_SHARED_LIBS=ON")))
     (home-page "https://github.com/intel/metee")
     (synopsis "Library to access Intel CSME and GSC firmware interfaces")
