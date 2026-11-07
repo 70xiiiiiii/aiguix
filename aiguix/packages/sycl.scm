@@ -123,8 +123,9 @@ such as Intel GPUs through DPC++.")
        (sha256
         (base32 "0h7lndidjnxr4ivm6cr1imc9b7r4i7k7pc1i2f8rwwqvakdvzxvr"))
        (modules '((guix build utils)))
-       ;; Binaries of Intel MPI and libfabric, and copies of hwloc, ITT,
-       ;; Level Zero, PMIx and UMF.
+       ;; oneCCL bundles prebuilt binaries of Intel MPI and libfabric, and
+       ;; copies of hwloc, ITT, Level Zero, PMIx and UMF.  Remove them;
+       ;; 'use-system-libraries points the build to the inputs instead.
        (snippet
         #~(with-directory-excursion "deps/libccl/deps"
             (for-each delete-file-recursively
@@ -134,21 +135,29 @@ such as Intel GPUs through DPC++.")
     (arguments
      (list
       #:configure-flags
-      #~(list "-DCMAKE_C_COMPILER=clang"
-              "-DCMAKE_CXX_COMPILER=clang++"
-              (string-append "-Dittapi_SOURCE_DIR="
-                             #$(this-package-input "ittapi"))
-              ;; Only the tests of the API, which need no GPU and no MPI
-              ;; processes.
-              "-DONECCL_TEST_USE_MPI=OFF"
-              "-DONECCL_LIBCCL_BUILD_FT=OFF"
-              "-DONECCL_LIBCCL_BUILD_EXAMPLES=OFF"
-              "-DONECCL_LIBCCL_BUILD_REG_TESTS=OFF")
+      #~(list
+         ;; The compilers of DPC++, for the SYCL code; else CMake would
+         ;; take GCC.
+         "-DCMAKE_C_COMPILER=clang"
+         "-DCMAKE_CXX_COMPILER=clang++"
+         ;; ITT from Guix instead of the Git submodule, whose directory
+         ;; the build looks for the headers in.
+         (string-append "-Dittapi_SOURCE_DIR="
+                        #$(this-package-input "ittapi"))
+         ;; Only the tests of the API, which need no GPU and no MPI
+         ;; processes.
+         "-DONECCL_TEST_USE_MPI=OFF"
+         "-DONECCL_LIBCCL_BUILD_FT=OFF"
+         "-DONECCL_LIBCCL_BUILD_EXAMPLES=OFF"
+         "-DONECCL_LIBCCL_BUILD_REG_TESTS=OFF")
       #:phases
       #~(modify-phases %standard-phases
           (add-after 'unpack 'use-system-libraries
             (lambda* (#:key inputs #:allow-other-keys)
-              ;; The Git submodules of ITT and GoogleTest.
+              ;; ITT and GoogleTest are Git submodules, which git-fetch
+              ;; does not fetch: drop them from the build, and let the
+              ;; tests use GoogleTest from Guix, whose CMake targets are
+              ;; GTest::gtest and GTest::gtest_main.
               (substitute* "deps/CMakeLists.txt"
                 (("^ *(require_submodule|add_subdirectory)\\((ittapi\
 |googletest).*") ""))
@@ -157,8 +166,9 @@ such as Intel GPUs through DPC++.")
                  (string-append "find_package(GTest REQUIRED)\n" all))
                 (("^( +)(gtest|gtest_main)\n" _ indentation target)
                  (string-append indentation "GTest::" target "\n")))
-              ;; The CPU libccl.so.1 in lib/ccl/cpu/lib needs libccl.so.2
-              ;; from lib.
+              ;; The CPU plugin, lib/ccl/cpu/lib/libccl.so.1, links to
+              ;; libccl.so.2 in lib/ of this package; add that directory
+              ;; to its RUNPATH.
               (substitute* "CMakeLists.txt"
                 (("-l:libccl\\.so\\.2 \\$\\{STATIC_INTEL_FLAG\\}" all)
                  (string-append all " -Wl,-rpath," #$output "/lib")))
@@ -166,6 +176,8 @@ such as Intel GPUs through DPC++.")
               ;; LD_LIBRARY_PATH; use DT_RUNPATH as everywhere in Guix.
               (substitute* "plugins/legacy_cpu/CMakeLists.txt"
                 (("\"-Wl,--disable-new-dtags\"") ""))
+              ;; The build looks for the dependencies in the directory
+              ;; that the snippet emptied; point it to the inputs.
               (with-directory-excursion "deps/libccl"
                 (substitute* "CMakeLists.txt"
                   (("\\$\\{DEPS_DIR\\}/itt/lib64")
@@ -185,11 +197,14 @@ such as Intel GPUs through DPC++.")
                                 ("umf" . ,#$(this-package-input "umf")))
                               dependency)))
                 (substitute* "src/CMakeLists.txt"
+                  ;; hwloc of Guix has no static library.
                   (("libhwloc\\.a") "libhwloc.so")
-                  ;; Not a copy of libfabric in the package.
+                  ;; Do not install the bundled libfabric, which the snippet
+                  ;; removed.
                   (("if \\(\"\\$\\{LIBFABRIC_DIR\\}\" STREQUAL \"\"\\)")
                    "if(FALSE)"))
-                ;; Libraries that libccl loads at run time.
+                ;; libccl opens these with dlopen when it starts; give it
+                ;; their file names in the store, as there is no /usr/lib.
                 (substitute* (find-files "src/common/api_wrapper"
                                          "\\.cpp$")
                   (("\"(libze_loader\\.so|libpmix\\.so|libmpi\\.so\\.12\
@@ -200,7 +215,8 @@ such as Intel GPUs through DPC++.")
                     "\""))))))
           (replace 'check
             (lambda* (#:key tests? #:allow-other-keys)
-              ;; The tests are registered for this configuration only.
+              ;; The tests are registered for the CTest configuration
+              ;; unit_tests only; plain ctest finds none.
               (when tests?
                 (invoke "ctest" "--output-on-failure" "-C" "unit_tests")))))))
     (native-inputs (list dpcpp googletest))
