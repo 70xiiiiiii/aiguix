@@ -35,7 +35,7 @@
   #:use-module (gnu packages linux)
   #:use-module (gnu packages llvm)
   #:use-module (gnu packages logging)
-  #:use-module ((gnu packages machine-learning) #:select (python-pytorch))
+  #:use-module (gnu packages machine-learning)
   #:use-module (gnu packages mpi)
   #:use-module ((gnu packages oneapi) #:select (onednn umf))
   #:use-module (gnu packages opencl)
@@ -43,8 +43,7 @@
   #:use-module (gnu packages pkg-config)
   #:use-module (gnu packages profiling)
   #:use-module (gnu packages python)
-  #:use-module ((aiguix packages oneapi)
-                #:select (intel-compute-runtime level-zero/driver-path))
+  #:use-module (aiguix packages oneapi)
   #:use-module (aiguix packages llvm))
 
 (define-public onemath
