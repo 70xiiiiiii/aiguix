@@ -81,13 +81,16 @@ provides a C and a C++ interface.")
     (arguments
      (list
       #:configure-flags
+      ;; The tests are not built by default.
       #~(list "-DENABLE_TESTS=ON")
       #:phases
       #~(modify-phases %standard-phases
           (replace 'check
             (lambda* (#:key tests? #:allow-other-keys)
-              ;; The unit tests are only registered in tests/, which calls
-              ;; enable_testing() itself.
+              ;; Only tests/CMakeLists.txt calls enable_testing(), so
+              ;; ctest finds the tests in tests/ only, not in the top
+              ;; directory where the standard phase looks.  Fail if ctest
+              ;; finds none.
               (when tests?
                 (with-directory-excursion "tests"
                   (invoke "ctest" "--output-on-failure"
