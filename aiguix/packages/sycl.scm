@@ -245,7 +245,8 @@ It transports data through libfabric or MPI.")
     (arguments
      (substitute-keyword-arguments (package-arguments onednn)
        ((#:configure-flags flags)
-        ;; After the flags of onednn, so that these win.
+        ;; After the flags of onednn, so that ONEDNN_BUILD_GRAPH=ON
+        ;; overrides their OFF.
         #~(append #$flags
                   (list (string-append "-DCMAKE_C_COMPILER="
                                        #$(file-append dpcpp "/bin/clang"))
@@ -255,7 +256,8 @@ It transports data through libfabric or MPI.")
                         ;; The graph API, which PyTorch uses for attention
                         ;; on Intel GPUs.
                         "-DONEDNN_BUILD_GRAPH=ON")))
-       ;; These need a SYCL device.
+       ;; These need a SYCL device, such as a supported Intel GPU, which
+       ;; the build environment lacks.
        ((#:test-exclude _ "") "_gpu$|^test_api_sycl$")
        ((#:phases phases)
         #~(modify-phases #$phases
@@ -263,14 +265,22 @@ It transports data through libfabric or MPI.")
               (lambda _
                 ;; On hybrid CPUs, the cache sizes come from /sys, which the
                 ;; build environment lacks; a size of 0 makes the CPU
-                ;; primitives divide by zero.  Fall back to CPUID then.
+                ;; primitives divide by zero.  Fall back to CPUID then, as
+                ;; oneDNN does on CPUs that are not hybrid.  CPUID gives
+                ;; the cache of the core that the thread runs on, P or E,
+                ;; not the smallest one, so the blocking may be a little
+                ;; worse; the results stay correct.
                 (substitute* "src/cpu/x64/platform.cpp"
                   (("return min_cache_bytes;")
                    "return min_cache_bytes > 0 ? min_cache_bytes
         : get_per_core_cache_size_cpuid(level);"))))))))
+    ;; DPC++ compiles the package, so it is a native input, as gfortran is
+    ;; in Guix, although the library links to libsycl from it.
     (native-inputs
      (modify-inputs (package-native-inputs onednn)
        (prepend dpcpp)))
+    ;; The OpenMP runtime of LLVM 23, the base of DPC++, for the CPU
+    ;; runtime OMP of onednn; and the OpenCL loader, for the GPU kernels.
     (inputs
      (modify-inputs (package-inputs onednn)
        (prepend libomp-23 opencl-icd-loader)))
