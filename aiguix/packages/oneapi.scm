@@ -595,24 +595,31 @@ targeting Intel graphics hardware.")
     (arguments
      (list
       #:configure-flags
-      #~(list "-DENABLE_TOOLS_BUILD=ON"
-              ;; Tracing with Perfetto, turned on at run time with
-              ;; ZE_INTEL_NPU_LOGPERFETTO.
-              "-DENABLE_NPU_PERFETTO_BUILD=ON"
-              ;; The validation tests need a real NPU.
-              "-DENABLE_VALIDATION_BUILD=OFF")
+      #~(list
+         ;; intel-npu-smi, which shows the use of the NPU, as xpu-smi
+         ;; does for GPUs; upstream does not build it by default.
+         "-DENABLE_TOOLS_BUILD=ON"
+         ;; Tracing with Perfetto, turned on at run time with
+         ;; ZE_INTEL_NPU_LOGPERFETTO.
+         "-DENABLE_NPU_PERFETTO_BUILD=ON"
+         ;; The validation tests need a real NPU.
+         "-DENABLE_VALIDATION_BUILD=OFF")
       #:phases
       #~(modify-phases %standard-phases
           (add-after 'unpack 'unpack-npu-compiler-elf
             (lambda _
-              ;; The ELF library has no install rules and is meant to be
-              ;; built as part of the driver, which also provides the
-              ;; firmware API headers it needs.
+              ;; The ELF library, a Git submodule of the driver, fetched as
+              ;; an origin in the native inputs instead.  It has no install
+              ;; rules and is built as part of the driver, which also
+              ;; provides the firmware API headers it needs.
               (copy-recursively
                #$(this-package-native-input "npu-compiler-elf-checkout")
                "third_party/npu_compiler_elf")))
           (add-after 'unpack 'use-system-npu-extensions
             (lambda* (#:key inputs #:allow-other-keys)
+              ;; The headers of the NPU extensions of Level Zero, a Git
+              ;; submodule of the driver, come from the package
+              ;; level-zero-npu-extensions: use its include/level_zero.
               (substitute*
                   "third_party/cmake/level-zero-npu-extensions.cmake"
                 (("\\$\\{CMAKE_CURRENT_SOURCE_DIR\\}/[a-z-]+")
@@ -621,7 +628,9 @@ targeting Intel graphics hardware.")
                                      "include/level_zero/ze_graph_ext.h"))))))
           (add-after 'unpack 'use-perfetto-sdk
             (lambda _
-              ;; The driver builds the SDK, two files, into itself.
+              ;; The driver builds the Perfetto SDK, two source files,
+              ;; into itself; take them from the source of perfetto
+              ;; instead of the bundled copy, which the snippet removed.
               (substitute* "third_party/cmake/perfetto.cmake"
                 (("\\$\\{CMAKE_CURRENT_SOURCE_DIR\\}/perfetto")
                  #$(package-source perfetto)))))
@@ -650,7 +659,9 @@ targeting Intel graphics hardware.")
               (base32
                "0xbaxxn45q662khma8kcs1s0hnl9l58ylcav30a16mvjjjkyx4cf")))
            pkg-config))
-    ;; The driver implements the Level Zero 1.32 interface.
+    ;; Upstream builds against Level Zero 1.32.0.  The driver reports the
+    ;; API version of the headers it is built with, 1.17 here;
+    ;; newer headers would claim functions that it does not implement.
     (inputs (list level-zero-1.32.0 level-zero-npu-extensions yaml-cpp))
     (supported-systems '("x86_64-linux"))
     (home-page "https://github.com/intel/linux-npu-driver")
