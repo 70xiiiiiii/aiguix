@@ -67,9 +67,25 @@
              ;; DeepSpeed is not packaged.
              "--ignore=tests/deepspeed"
              ;; These tests require network access.
-             "--deselect=tests/test_cli.py::ModelEstimatorTester"
-             ;; ProcessGroupGloo::allgather: invalid tensor size.
-             "--deselect=tests/test_cpu.py::MultiCPUTester::test_cpu")))
+             "--deselect=tests/test_cli.py::ModelEstimatorTester")
+      #:phases
+      #~(modify-phases %standard-phases
+          (add-after 'unpack 'prefer-gloo
+            (lambda _
+              ;; For several processes on the CPU, Accelerate takes MPI
+              ;; whenever PyTorch has it, as the PyTorch of Guix does,
+              ;; even if the processes are connected with Gloo, as by
+              ;; debug_launcher; gathering tensors then fails, as in the
+              ;; test test_cpu.  Take Gloo, as with the PyTorch wheels of
+              ;; upstream, unless MPI is asked for or mpirun started the
+              ;; processes.
+              (substitute* "src/accelerate/state.py"
+                (("if backend in \\(None, \"mpi\"\\) and")
+                 (string-append
+                  "if (backend == \"mpi\" or (backend is None and"
+                  " get_int_from_env([\"PMI_SIZE\","
+                  " \"OMPI_COMM_WORLD_SIZE\", \"MV2_COMM_WORLD_SIZE\"],"
+                  " 0) > 0)) and"))))))))
     (propagated-inputs (list python-huggingface-hub
                              python-numpy
                              python-packaging
