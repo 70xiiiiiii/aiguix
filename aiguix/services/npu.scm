@@ -47,7 +47,11 @@ nodes of GPUs, lets every user run compute on the NPU.  With @code{\"0660\"},
 only the members of @code{group} can."))
 
 (define (npu-udev-rules config)
-  (list (udev-rule "70-accel.rules"
+  ;; eudev has no rule for the devices of the subsystem accel, the NPU
+  ;; among them, and leaves them to root; give them to the group and mode
+  ;; of CONFIG.  Like 90-kvm.rules of Guix, the rule comes late, so that
+  ;; it wins over rules for accel that packages may bring.
+  (list (udev-rule "90-accel.rules"
                    (string-append "SUBSYSTEM==\"accel\", GROUP=\""
                                   (npu-configuration-group config)
                                   "\", MODE=\""
@@ -55,6 +59,8 @@ only the members of @code{group} can."))
                                   "\"\n"))))
 
 (define (npu-groups config)
+  ;; The default group, "video", is in %base-groups; add the group only
+  ;; if it is not there.
   (let ((group (npu-configuration-group config)))
     (if (member group (map user-group-name %base-groups))
         '()
