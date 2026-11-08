@@ -1,0 +1,78 @@
+Build the MediaPipe fork of OpenVINO Model Server with Protobuf 6.
+
+The fork is written for Protobuf 3.19.1, which Bazel builds into it.
+Guix has Protobuf 6, which changed the API used by the template parser:
+
+- io::ErrorCollector renamed AddError and AddWarning to RecordError and
+  RecordWarning, which take an absl::string_view.  Rename the calls and
+  the overrides in ParserErrorCollector.
+- Reflection::SupportsUnknownEnumValues is gone; whether an enum field
+  accepts unknown values is a property of the field.
+- internal::GetAnyFieldDescriptors is not exported by the shared
+  libprotobuf.  Define it here, with the same checks: the message is a
+  google.protobuf.Any with a string field 1 (type_url) and a bytes
+  field 2 (value).
+
+--- a/mediapipe/framework/tool/template_parser.cc
++++ b/mediapipe/framework/tool/template_parser.cc
+@@ -95,7 +95,18 @@
+ }  // namespace io
+ 
+ namespace internal {
+-using proto_ns::internal::GetAnyFieldDescriptors;
++inline bool GetAnyFieldDescriptors(const proto_ns::Message& message,
++                                   const proto_ns::FieldDescriptor** type_url,
++                                   const proto_ns::FieldDescriptor** value) {
++  const proto_ns::Descriptor* descriptor = message.GetDescriptor();
++  if (descriptor->full_name() != "google.protobuf.Any") return false;
++  *type_url = descriptor->FindFieldByNumber(1);
++  *value = descriptor->FindFieldByNumber(2);
++  return *type_url != nullptr &&
++         (*type_url)->type() == proto_ns::FieldDescriptor::TYPE_STRING &&
++         *value != nullptr &&
++         (*value)->type() == proto_ns::FieldDescriptor::TYPE_BYTES;
++}
+ using proto_ns::internal::kTypeGoogleApisComPrefix;
+ using proto_ns::internal::kTypeGoogleProdComPrefix;
+ using proto_ns::internal::WireFormatLite;
+@@ -359,7 +370,7 @@
+                         << root_message_type_->full_name() << ": " << message;
+       }
+     } else {
+-      error_collector_->AddError(line, col, std::string(message));
++      error_collector_->RecordError(line, col, std::string(message));
+     }
+   }
+ 
+@@ -374,7 +385,7 @@
+                           << root_message_type_->full_name() << ": " << message;
+       }
+     } else {
+-      error_collector_->AddWarning(line, col, std::string(message));
++      error_collector_->RecordWarning(line, col, std::string(message));
+     }
+   }
+ 
+@@ -880,7 +891,7 @@
+ 
+         if (enum_value == NULL) {
+           if (int_value != std::numeric_limits<int64_t>::max() &&
+-              reflection->SupportsUnknownEnumValues()) {
++              !field->legacy_enum_field_treated_as_closed()) {
+             SET_FIELD(EnumValue, int_value);
+             return true;
+           } else if (!allow_unknown_enum_) {
+@@ -1310,11 +1321,11 @@
+ 
+     virtual ~ParserErrorCollector() {}
+ 
+-    virtual void AddError(int line, int column, const std::string& message) {
++    void RecordError(int line, int column, absl::string_view message) override {
+       parser_->ReportError(line, column, message);
+     }
+ 
+-    virtual void AddWarning(int line, int column, const std::string& message) {
++    void RecordWarning(int line, int column, absl::string_view message) override {
+       parser_->ReportWarning(line, column, message);
+     }
+ 

@@ -1,0 +1,78 @@
+Make TensorFlow tensors in MediaPipe graphs optional.
+
+Inputs and outputs of type tensorflow::Tensor in MediaPipe graphs need
+the TensorFlow framework library, which builds only with Bazel and which
+Guix lacks.  With TFTENSOR_DISABLE set to 1, leave out the code for them;
+requests with such tensors then get NOT_IMPLEMENTED.  The other tensor
+types are not affected.
+
+--- a/src/kfs_frontend/kfs_graph_executor_impl.cpp
++++ b/src/kfs_frontend/kfs_graph_executor_impl.cpp
+@@ -29,7 +29,9 @@
+ #include "../mediapipe_internal/mediapipegraphdefinition.hpp"
+ #include "../predict_request_validation_utils.hpp"
+ #include "../status.hpp"
++#if (TFTENSOR_DISABLE == 0)
+ #include "../tensorflow_type_utils.hpp"
++#endif
+ 
+ #pragma warning(push)
+ #pragma warning(disable : 6385 6386 6326 6011 6294 6201 4309 4005 4456 6246)
+@@ -167,6 +169,7 @@
+ template <typename T>
+ static Status receiveAndSerializePacket(const ::mediapipe::Packet& packet, KFSResponse& response, const std::string& outputStreamName);
+ 
++#if (TFTENSOR_DISABLE == 0)
+ template <>
+ Status receiveAndSerializePacket<tensorflow::Tensor>(const ::mediapipe::Packet& packet, KFSResponse& response, const std::string& outputStreamName) {
+     try {
+@@ -186,6 +189,7 @@
+     }
+     HANDLE_PACKET_RECEIVAL_EXCEPTIONS();
+ }
++#endif
+ 
+ template <>
+ Status receiveAndSerializePacket<::mediapipe::Tensor>(const ::mediapipe::Packet& packet, KFSResponse& response, const std::string& outputStreamName) {
+@@ -438,6 +442,7 @@
+     return StatusCode::OK;
+ }
+ 
++#if (TFTENSOR_DISABLE == 0)
+ static Status deserializeTensor(const std::string& requestedName, const KFSRequest& request, std::unique_ptr<tensorflow::Tensor>& outTensor, PythonBackend* pythonBackend) {
+     using tensorflow::Tensor;
+     using tensorflow::TensorShape;
+@@ -541,6 +546,7 @@
+     HANDLE_DESERIALIZATION_EXCEPTION("Tensorflow tensor")
+     return StatusCode::OK;
+ }
++#endif
+ 
+ static Status deserializeTensor(const std::string& requestedName, const KFSRequest& request, std::unique_ptr<ov::Tensor>& outTensor, PythonBackend* pythonBackend) {
+     auto requestInputItr = request.inputs().begin();
+@@ -991,7 +997,12 @@
+         status = createPacketAndPushIntoGraph<Holder>(inputName, request, graph, timestamp, nullptr);
+     } else if (inputPacketType == mediapipe_packet_type_enum::TFTENSOR) {
+         SPDLOG_DEBUG("Request processing TF tensor: {}", inputName);
++#if (TFTENSOR_DISABLE == 0)
+         status = createPacketAndPushIntoGraph<tensorflow::Tensor, Holder>(inputName, request, graph, timestamp, nullptr);
++#else
++        status = Status(StatusCode::NOT_IMPLEMENTED,
++            "TensorFlow tensors are disabled");
++#endif
+     } else if (inputPacketType == mediapipe_packet_type_enum::MPTENSOR) {
+         SPDLOG_DEBUG("Request processing MP tensor: {}", inputName);
+         status = createPacketAndPushIntoGraph<mediapipe::Tensor, Holder>(inputName, request, graph, timestamp, nullptr);
+@@ -1094,7 +1105,12 @@
+         status = receiveAndSerializePacket<KFSResponse>(packet, response, packetName);
+     } else if (packetType == mediapipe_packet_type_enum::TFTENSOR) {
+         SPDLOG_DEBUG("Response processing packet type TF Tensor name: {}", packetName);
++#if (TFTENSOR_DISABLE == 0)
+         status = receiveAndSerializePacket<tensorflow::Tensor>(packet, response, packetName);
++#else
++        status = Status(StatusCode::NOT_IMPLEMENTED,
++            "TensorFlow tensors are disabled");
++#endif
+     } else if (packetType == mediapipe_packet_type_enum::TFLITETENSOR) {
+         SPDLOG_DEBUG("Response processing packet type TFLite Tensor name: {}", packetName);
+         std::string details{"Response processing packet type TFLite Tensor is not supported"};

@@ -2,7 +2,7 @@
 # that it uses, replacing the upstream Bazel build for GNU Guix.
 #
 # Upstream configuration reproduced here: MEDIAPIPE_DISABLE=0,
-# MEDIAPIPE_DISABLE_GPU=1, PYTHON_DISABLE=1, CLOUD_DISABLE=1.
+# MEDIAPIPE_DISABLE_GPU=1, PYTHON_DISABLE=0, CLOUD_DISABLE=1.
 
 cmake_minimum_required(VERSION 3.21)
 project(ovms LANGUAGES C CXX)
@@ -64,6 +64,10 @@ find_path(DR_LIBS_INCLUDE_DIR dr_wav.h REQUIRED)
 find_path(STB_INCLUDE_DIR stb_image.h REQUIRED)
 # Only for the TfLiteTensor type in some core calculators.
 find_path(TFLITE_INCLUDE_DIR tensorflow/lite/interpreter.h REQUIRED)
+# Python nodes in MediaPipe graphs and chat templates rendered with Jinja2.
+find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Embed
+  Development.Module)
+find_package(pybind11 CONFIG REQUIRED)
 
 set(GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/gen")
 file(MAKE_DIRECTORY "${GEN_DIR}")
@@ -109,7 +113,7 @@ endfunction()
 set(COMMON_DEFINES
   MEDIAPIPE_DISABLE=0
   MEDIAPIPE_DISABLE_GPU=1
-  PYTHON_DISABLE=1
+  PYTHON_DISABLE=0
   CLOUD_DISABLE=1
   TFTENSOR_DISABLE=1
   OVMS_DUMP_TO_FILE=0
@@ -167,7 +171,7 @@ target_link_libraries(mediapipe PUBLIC ${COMMON_LIBS})
 
 file(GLOB_RECURSE OVMS_PROTOS RELATIVE "${OVMS_SOURCE_DIR}"
   "${OVMS_SOURCE_DIR}/src/*.proto")
-list(FILTER OVMS_PROTOS EXCLUDE REGEX "^src/(test|python|example)/")
+list(FILTER OVMS_PROTOS EXCLUDE REGEX "^src/(test|example)/|/tests/")
 ovms_protoc(OVMS_PROTO_SRCS "${OVMS_SOURCE_DIR}"
   PROTOS ${OVMS_PROTOS} IMPORTS "${MEDIAPIPE_SOURCE_DIR}")
 
@@ -185,10 +189,10 @@ add_custom_command(
 
 file(GLOB_RECURSE OVMS_SRCS
   "${OVMS_SOURCE_DIR}/src/*.cpp" "${OVMS_SOURCE_DIR}/src/*.cc")
+# The Python module pyovms is built separately, below.
 list(FILTER OVMS_SRCS EXCLUDE REGEX
-  "/src/(test|python|example|custom_nodes)/")
-list(FILTER OVMS_SRCS EXCLUDE REGEX
-  "windows|/(azure|s3|gcs)[^/]*\\.cpp$|py_jinja_template_processor")
+  "/src/(test|example|custom_nodes|python/binding)/")
+list(FILTER OVMS_SRCS EXCLUDE REGEX "windows|/(azure|s3|gcs)[^/]*\\.cpp$")
 # Not built by Bazel either: leftovers marked "#pragma once".
 list(FILTER OVMS_SRCS EXCLUDE REGEX
   "/(capi_frontend/serialization|kfs_frontend/kfs_frontend_impl)\\.cpp$")
@@ -217,6 +221,7 @@ target_link_libraries(ovms PRIVATE
   httplib::httplib
   CURL::libcurl OpenSSL::SSL OpenSSL::Crypto OpenCL::OpenCL
   PkgConfig::LIBGIT2 PkgConfig::LIBVA PkgConfig::UUID
+  pybind11::embed
   "${MINITRACE_LIBRARY}" ${CMAKE_DL_LIBS})
 # Like Bazel's optimized build: drop unused sections, among them explicit
 # template instantiations that refer to specializations defined elsewhere.
@@ -225,3 +230,15 @@ target_compile_options(ovms PRIVATE -ffunction-sections -fdata-sections)
 target_link_options(ovms PRIVATE -Wl,--gc-sections)
 
 install(TARGETS ovms RUNTIME DESTINATION bin)
+
+# The Python module that the Python nodes import to exchange tensors with
+# OVMS.
+pybind11_add_module(pyovms MODULE
+  "${OVMS_SOURCE_DIR}/src/python/binding/ovms_py_tensor.cpp"
+  "${OVMS_SOURCE_DIR}/src/python/ovms_py_tensor.cpp")
+target_include_directories(pyovms PRIVATE "${OVMS_SOURCE_DIR}")
+target_compile_definitions(pyovms PRIVATE ${COMMON_DEFINES})
+set(OVMS_PYTHON_DIR
+  "lib/python${Python3_VERSION_MAJOR}.${Python3_VERSION_MINOR}/site-packages"
+  CACHE PATH "Installation directory of the Python module pyovms")
+install(TARGETS pyovms LIBRARY DESTINATION "${OVMS_PYTHON_DIR}")

@@ -1,0 +1,44 @@
+Build OpenVINO Model Server with Protobuf 6 and a newer Abseil.
+
+- Protobuf 6 returns absl::Status from util::MessageToJsonString instead
+  of util::Status, and renamed JsonPrintOptions::always_print_primitive_
+  fields to always_print_fields_with_no_presence.
+- Abseil puts its names into an inline namespace, so the forward
+  declaration of absl::Status declares a different class; include the
+  header instead.
+
+--- a/src/http_rest_api_handler.cpp
++++ b/src/http_rest_api_handler.cpp
+@@ -234,7 +234,7 @@
+     }
+     std::string output;
+     google::protobuf::util::JsonPrintOptions opts;
+-    google::protobuf::util::Status status = google::protobuf::util::MessageToJsonString(grpc_response, &output, opts);
++    absl::Status status = google::protobuf::util::MessageToJsonString(grpc_response, &output, opts);
+     if (!status.ok()) {
+         return StatusCode::INTERNAL_ERROR;
+     }
+@@ -856,8 +856,8 @@
+     std::string output;
+     google::protobuf::util::JsonPrintOptions opts;
+     // This parameter forces JSON writer to not omit empty shape in case of scalar tensor
+-    opts.always_print_primitive_fields = true;
+-    google::protobuf::util::Status status = google::protobuf::util::MessageToJsonString(grpc_response, &output, opts);
++    opts.always_print_fields_with_no_presence = true;
++    absl::Status status = google::protobuf::util::MessageToJsonString(grpc_response, &output, opts);
+     if (!status.ok()) {
+         return StatusCode::JSON_SERIALIZATION_ERROR;
+     }
+--- a/src/audio/speech_to_text/s2t_servable.hpp
++++ b/src/audio/speech_to_text/s2t_servable.hpp
+@@ -27,9 +27,7 @@
+ #include "src/audio/speech_to_text/s2t_executor.hpp"
+ #include "src/status.hpp"
+ 
+-namespace absl {
+-class Status;
+-}  // namespace absl
++#include "absl/status/status.h"
+ 
+ namespace mediapipe {
+ class S2tCalculatorOptions;
