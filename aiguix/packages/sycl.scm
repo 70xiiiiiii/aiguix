@@ -308,20 +308,26 @@ as on CPUs, and includes the graph API.")))
     (arguments
      (list
       #:configure-flags
-      ;; The IDs of the Level Zero functions are for an older Level Zero;
-      ;; add those of the newer functions, as upstream does on updates.
-      #~(list "-DPTI_API_ID_REGENERATE=ON"
-              "-DPTI_BUILD_SAMPLES=OFF"
-              "-DPTI_BUILD_URGEMM=OFF")
+      #~(list
+         ;; The IDs of the Level Zero functions are for an older Level
+         ;; Zero; add those of the newer functions, as upstream does on
+         ;; updates.
+         "-DPTI_API_ID_REGENERATE=ON"
+         ;; Example programs, which are not installed.
+         "-DPTI_BUILD_SAMPLES=OFF"
+         ;; urgemm_suite, a test of the Unified Runtime of SYCL, which
+         ;; needs an Intel GPU.
+         "-DPTI_BUILD_URGEMM=OFF")
       #:phases
       #~(modify-phases %standard-phases
-          (add-after 'unpack 'use-system-libraries
+          (add-after 'unpack 'use-ittapi
             (lambda _
-              ;; The build would fetch ITT; take that of Guix, and the
-              ;; internal headers that it uses from the source of ITT.
+              ;; The library fetches ITT with FetchContent unless the
+              ;; targets ittapi::ittnotify and ittapi::headers exist.  Take
+              ;; ittnotify of Guix, and for the headers also the internal
+              ;; ones that it uses, from the source of ITT.
               (substitute* "sdk/cmake/Modules/macros.cmake"
-                (("if \\(NOT TARGET ittapi::ittnotify OR NOT TARGET \
-ittapi::headers\\)")
+                (("if \\(NOT TARGET ittapi::ittnotify OR .*\\)")
                  (string-append
                   "if (NOT TARGET ittapi::headers)\n"
                   "    find_package(ittapi REQUIRED)\n"
@@ -331,8 +337,12 @@ ittapi::headers\\)")
                   #$(this-package-input "ittapi") "/include;"
                   #$(package-source ittapi) "/src/ittnotify\")\n"
                   "  endif()\n"
-                  "  if (FALSE)")))
-              ;; Both load the Level Zero loader at run time.
+                  "  if (FALSE)")))))
+          (add-after 'use-ittapi 'find-level-zero
+            (lambda _
+              ;; The library and unitrace open the Level Zero loader with
+              ;; dlopen by its name alone; give its file name in the store,
+              ;; so that they find it in any program they are loaded into.
               (substitute* '("sdk/src/lz_api_tracing_api_loader.h"
                              "sdk/src/levelzero/ze_wrappers.h"
                              "sdk/src/metrics/metrics_handler.h"
@@ -340,15 +350,20 @@ ittapi::headers\\)")
                 (("\"libze_loader\\.so\\.1\"")
                  (string-append "\""
                                 #$(this-package-input "level-zero")
-                                "/lib/libze_loader.so.1\"")))
-              ;; unitrace writes the Git commit into its version.
+                                "/lib/libze_loader.so.1\"")))))
+          (add-after 'find-level-zero 'set-unitrace-version
+            (lambda _
+              ;; unitrace puts the Git commit into its version, but the
+              ;; checkout of git-fetch has no Git repository; use the tag.
               (substitute* "tools/unitrace/scripts/get_commit_hash.py"
                 ((".*subprocess\\.run\\(\\['git'.*") "")
                 (("result\\.stdout\\[0:len\\(result\\.stdout\\) - 1\\]")
                  (string-append "\"pti-"
                                 #$(package-version this-package) "\"")))))
-          (add-after 'use-system-libraries 'change-directory
+          (add-after 'set-unitrace-version 'chdir-sdk
             (lambda _
+              ;; The library, libpti_view, is in sdk/; unitrace, in
+              ;; tools/unitrace, is built after it.
               (chdir "sdk")))
           (replace 'check
             (lambda* (#:key tests? #:allow-other-keys)
@@ -359,39 +374,41 @@ ittapi::headers\\)")
                         "-E" (string-append
                               "^(FlagCombinations|PcSamplingTest"
                               "|ZeEventPool(Manager|sObserver)?Test)")))))
-          (add-after 'install 'install-unitrace
-            (lambda* (#:key inputs #:allow-other-keys)
-              (let ((build (string-append (getcwd) "/../unitrace")))
-                (mkdir-p build)
-                ;; The scripts of unitrace clone these repositories into
-                ;; the build directory unless they are there, and copy
-                ;; headers from them; ITT is built from its source.
+          (add-after 'install 'prepare-unitrace
+            (lambda _
+              ;; The scripts of unitrace clone these repositories into its
+              ;; build directory unless they are there, and copy headers
+              ;; from them; ITT is built from its source.  Provide them.
+              (let ((build "../unitrace"))
                 (for-each
                  (lambda (directory source)
-                   (copy-recursively source
-                                     (string-append build "/" directory))
-                   (for-each make-file-writable
-                             (find-files (string-append build "/"
-                                                        directory)
-                                         #:directories? #t)))
+                   (let ((target (string-append build "/" directory)))
+                     (copy-recursively source target)
+                     (for-each make-file-writable
+                               (find-files target #:directories? #t))))
                  '("compute-runtime" "level-zero" "ittapi")
                  (list #$(package-source intel-compute-runtime)
                        #$(package-source level-zero/driver-path)
-                       #$(package-source ittapi)))
-                (invoke "cmake" "-S" "../tools/unitrace" "-B" build
-                        "-DCMAKE_BUILD_TYPE=Release"
-                        (string-append "-DCMAKE_INSTALL_PREFIX=" #$output)
-                        ;; libunitrace_mpi, for tracing MPI programs.
-                        "-DBUILD_WITH_MPI=1"
-                        ;; The output in the format of Perfetto needs a
-                        ;; static libprotobuf with hidden symbols, since
-                        ;; unitrace preloads its library into programs that
-                        ;; may have their own protobuf.  Perfetto also reads
-                        ;; the Chrome traces that unitrace writes.
-                        "-DBUILD_WITH_PERFETTO=OFF")
-                (invoke "cmake" "--build" build "--parallel"
-                        (number->string (parallel-job-count)))
-                (invoke "cmake" "--install" build)))))))
+                       #$(package-source ittapi))))))
+          (add-after 'prepare-unitrace 'build-unitrace
+            (lambda _
+              ;; BUILD_WITH_MPI builds libunitrace_mpi, for tracing MPI
+              ;; programs.  The output in the format of Perfetto needs a
+              ;; static libprotobuf with hidden symbols, since unitrace
+              ;; preloads its library into programs that may have their
+              ;; own protobuf; Perfetto also reads the Chrome traces that
+              ;; unitrace writes.
+              (invoke "cmake" "-S" "../tools/unitrace" "-B" "../unitrace"
+                      (string-append "-DCMAKE_INSTALL_PREFIX=" #$output)
+                      "-DBUILD_WITH_MPI=1"
+                      "-DBUILD_WITH_PERFETTO=OFF")
+              (invoke "cmake" "--build" "../unitrace" "--parallel"
+                      (number->string (parallel-job-count)))))
+          (add-after 'build-unitrace 'install-unitrace
+            (lambda _
+              ;; unitrace, its libraries and its scripts, such as
+              ;; uniview.py, go into the output of libpti_view.
+              (invoke "cmake" "--install" "../unitrace"))))))
     (native-inputs
      (list googletest pkg-config python))
     (inputs
