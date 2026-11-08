@@ -1256,8 +1256,6 @@ decoding, including DFlash, and comes with C++ and Python APIs.")
     (arguments
      (list
       #:build-type "Release"
-      ;; The test suite converts tokenizers of Hugging Face models downloaded
-      ;; from the network; 'check' only checks that the extension loads.
       #:configure-flags
       #~(list
          ;; Use the same layout as the Python wheel, where the Python module
@@ -1292,14 +1290,15 @@ decoding, including DFlash, and comes with C++ and Python APIs.")
                  "PRIVATE PkgConfig::PCRE2)"))))
           (replace 'install
             (lambda _
+              ;; Install the C++ extension with CMake and the Python
+              ;; module by hand, which py-build-cmake does when upstream
+              ;; builds a wheel.
               (let ((site (string-append
                            #$output "/lib/python"
                            #$(version-major+minor (package-version python))
                            "/site-packages/openvino_tokenizers")))
                 (invoke "cmake" "--install" "."
                         "--component" "openvino_tokenizers")
-                ;; The Python module is normally copied by the
-                ;; py-build-cmake backend.
                 (copy-recursively "../source/python/openvino_tokenizers"
                                   site)
                 (install-file "python/__version__.py" site))))
@@ -1319,15 +1318,23 @@ decoding, including DFlash, and comes with C++ and Python APIs.")
                     (format port "Metadata-Version: 2.1~%")
                     (format port "Name: openvino-tokenizers~%")
                     (format port "Version: ~a~%" #$version))))))
+          ;; There are no CTest tests, and the test suite in tests/ needs
+          ;; Hugging Face models from the network.  Replace the standard
+          ;; 'check, which runs before 'install, with one that runs after
+          ;; the Python module is installed, and check that the installed
+          ;; extension loads into OpenVINO.
           (delete 'check)
           (add-after 'install 'check
             (lambda* (#:key tests? #:allow-other-keys)
               (when tests?
+                ;; Put the installed module before those of the inputs.
                 (setenv "GUIX_PYTHONPATH"
                         (string-append
                          #$output "/lib/python"
                          #$(version-major+minor (package-version python))
                          "/site-packages:" (getenv "GUIX_PYTHONPATH")))
+                ;; Take the file name of the extension from the module, as
+                ;; users do, and load the extension into a Core.
                 (invoke "python3" "-c"
                         (string-append
                          "import openvino, openvino_tokenizers;"
