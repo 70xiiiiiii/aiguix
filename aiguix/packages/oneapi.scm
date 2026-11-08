@@ -1759,14 +1759,19 @@ of Intel CPUs.")
             (add-after 'unpack 'skip-git-version
               (lambda _
                 ;; setup.py appends the output of "git rev-parse" to
-                ;; development versions; the commit is in the Guix version.
+                ;; development versions.  Without Git and a repository, it
+                ;; stops the build; skip that step.  The commit is in the
+                ;; Guix version already.
                 (substitute* "setup.py"
                   (("__version__\\.endswith\\(\"\\.dev0\"\\)") "False"))))
             (replace 'check
               (lambda* (#:key tests? #:allow-other-keys)
-                ;; The test suite needs models from the Hugging Face Hub;
-                ;; check that the installed OpenVINO backend and its command
-                ;; load.
+                ;; The test suite needs models from the Hugging Face Hub.
+                ;; Instead, check that the installed package loads with
+                ;; NNCF and openvino-tokenizers, which it would leave out
+                ;; quietly, and that optimum-cli has the command "export
+                ;; openvino".  Run in /tmp, so that Python imports the
+                ;; installed package and not the one in the source tree.
                 (when tests?
                   (with-directory-excursion "/tmp"
                     (invoke "python3" "-c"
