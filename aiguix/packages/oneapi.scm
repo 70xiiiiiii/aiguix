@@ -1609,23 +1609,38 @@ ONNX.")
   (package
     (inherit openvino)
     (name "python-openvino")
+    ;; The output "developer" of openvino is for packages that build
+    ;; against it, such as this one; the bindings need none.
     (outputs '("out"))
     (arguments
+     ;; These arguments replace those of openvino instead of inheriting
+     ;; them, so state again what applies here too.
      (list
+      ;; As in openvino, as upstream recommends; debugging information
+      ;; would be huge.
       #:build-type "Release"
-      ;; There are no CTest tests; 'check' runs after 'install' instead.
       #:configure-flags
       #~(let ((developer (search-input-directory %build-inputs
                                                  "developer_package")))
-          (list "-DCPACK_GENERATOR=CONDA-FORGE" ;GNU installation layout
-                (string-append "-DOpenVINODeveloperPackage_DIR="
-                               developer "/cmake")
-                ;; Do not keep a reference to the "developer" output, which
-                ;; is only needed at build time, through __FILE__.
-                (string-append "-DCMAKE_CXX_FLAGS=-ffile-prefix-map="
-                               developer "=developer_package")
-                "-DENABLE_PYTHON=ON"
-                "-DENABLE_WHEEL=OFF"))
+          (list
+           ;; The GNU installation layout, as in openvino.
+           "-DCPACK_GENERATOR=CONDA-FORGE"
+           ;; Build only the bindings, against the developer package of
+           ;; openvino, instead of OpenVINO as a whole.
+           (string-append "-DOpenVINODeveloperPackage_DIR="
+                          developer "/cmake")
+           ;; The headers of the developer package put their file names
+           ;; into the module, for example for error messages.  Shorten
+           ;; them, so that it does not keep a reference to the large
+           ;; "developer" output, which is only needed at build time.
+           (string-append "-DCMAKE_CXX_FLAGS=-ffile-prefix-map="
+                          developer "=developer_package")
+           ;; On by default if Python is found; stated, so that a missing
+           ;; Python stops the build instead of leaving out the bindings.
+           "-DENABLE_PYTHON=ON"
+           ;; Install with CMake instead of building a wheel; the default
+           ;; depends on whether the Python packages for wheels are found.
+           "-DENABLE_WHEEL=OFF"))
       #:phases
       #~(modify-phases %standard-phases
           (add-after 'unpack 'chdir
@@ -1634,23 +1649,26 @@ ONNX.")
               (chdir "src/bindings/python")))
           (add-after 'chdir 'find-ittapi
             (lambda _
-              ;; The developer package refers to ittapi::ittnotify without
-              ;; looking for ittapi itself.
+              ;; The developer package of openvino links to ittapi, but
+              ;; does not call find_dependency for it; find it first.
               (substitute* "CMakeLists.txt"
                 (("find_package\\(OpenVINODeveloperPackage REQUIRED\\)" all)
                  (string-append "find_package(ittapi REQUIRED)\n    "
                                 all)))))
           (add-before 'configure 'set-version
             (lambda _
-              ;; The bindings refuse to load unless their build number
-              ;; matches that of libopenvino.so.
+              ;; The module compares the build number that it is built
+              ;; with, CI_BUILD_NUMBER, with that of libopenvino.so, and
+              ;; refuses to load if they differ; use that of openvino.
               (setenv "CI_BUILD_NUMBER"
                       (string-append #$(package-version openvino)
                                      "-000-guix"))))
           (replace 'install
             (lambda _
-              ;; The Python components are excluded from the default
-              ;; installation.
+              ;; The layout chosen with CPACK_GENERATOR leaves the Python
+              ;; components out of the default installation, as
+              ;; distributions install them separately; install the one
+              ;; for this Python.
               (invoke "cmake" "--install" "." "--component"
                       (string-append
                        "pyopenvino_python"
@@ -1679,6 +1697,9 @@ ONNX.")
                     (format port "Metadata-Version: 2.1~%Name: openvino~%")
                     (format port "Version: ~a~%"
                             #$(package-version openvino)))))))
+          ;; The bindings have no CTest tests.  Instead, after installing,
+          ;; check that the module loads, matches libopenvino.so, creates
+          ;; a Core, and has the model conversion API.
           (delete 'check)
           (add-after 'install 'check
             (lambda* (#:key tests? #:allow-other-keys)
@@ -1694,7 +1715,9 @@ ONNX.")
                                        "openvino.Core();"
                                        "openvino.convert_model"))))))))
     (native-inputs (list pybind11 (list openvino "developer")))
+    ;; The developer package of openvino links to ittapi and pugixml.
     (inputs (list ittapi openvino pugixml python))
+    ;; The module imports numpy, for example to convert tensors.
     (propagated-inputs (list python-numpy))
     (synopsis "Python bindings for OpenVINO")
     (description
