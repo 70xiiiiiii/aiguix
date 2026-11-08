@@ -128,7 +128,11 @@
       (build-system copy-build-system)
       (arguments
        (list
-        ;; The headers include "ze_api.h", so they go next to it.
+        ;; Users include these headers by name alone, as
+        ;; <ze_graph_ext.h>, and they include "ze_api.h" the same way.
+        ;; level-zero installs that in include/level_zero, which its
+        ;; level-zero.pc adds to the search path; install them there
+        ;; too, so that in a profile one search path finds both.
         #:install-plan
         #~'(("." "include/level_zero"
              #:include-regexp ("\\.h$")))))
