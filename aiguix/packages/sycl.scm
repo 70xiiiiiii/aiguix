@@ -353,8 +353,9 @@ as on CPUs, and includes the graph API.")))
                                 "/lib/libze_loader.so.1\"")))))
           (add-after 'find-level-zero 'set-unitrace-version
             (lambda _
-              ;; unitrace puts the Git commit into its version, but the
-              ;; checkout of git-fetch has no Git repository; use the tag.
+              ;; unitrace puts the output of git rev-parse HEAD into its
+              ;; version, which fails without Git and a Git repository;
+              ;; use the tag instead.
               (substitute* "tools/unitrace/scripts/get_commit_hash.py"
                 ((".*subprocess\\.run\\(\\['git'.*") "")
                 (("result\\.stdout\\[0:len\\(result\\.stdout\\) - 1\\]")
@@ -392,14 +393,16 @@ as on CPUs, and includes the graph API.")))
                        #$(package-source ittapi))))))
           (add-after 'prepare-unitrace 'build-unitrace
             (lambda _
-              ;; BUILD_WITH_MPI builds libunitrace_mpi, for tracing MPI
-              ;; programs.  The output in the format of Perfetto needs a
-              ;; static libprotobuf with hidden symbols, since unitrace
-              ;; preloads its library into programs that may have their
-              ;; own protobuf; Perfetto also reads the Chrome traces that
-              ;; unitrace writes.
+              ;; The libraries go into lib/, as in the rest of the output,
+              ;; instead of lib64/.  BUILD_WITH_MPI builds libunitrace_mpi,
+              ;; for tracing MPI programs.  The output in the format of
+              ;; Perfetto needs a static libprotobuf with hidden symbols,
+              ;; since unitrace preloads its library into programs that
+              ;; may have their own protobuf; Perfetto also reads the
+              ;; Chrome traces that unitrace writes.
               (invoke "cmake" "-S" "../tools/unitrace" "-B" "../unitrace"
                       (string-append "-DCMAKE_INSTALL_PREFIX=" #$output)
+                      "-DCMAKE_INSTALL_LIBDIR=lib"
                       "-DBUILD_WITH_MPI=1"
                       "-DBUILD_WITH_PERFETTO=OFF")
               (invoke "cmake" "--build" "../unitrace" "--parallel"
