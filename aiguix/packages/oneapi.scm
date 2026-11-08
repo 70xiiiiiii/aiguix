@@ -171,7 +171,9 @@ and the NPU compiler are built against them.")
                                                        "/third_party")
                 (for-each delete-file-recursively unused)))
 
-            ;; RapidJSON is taken from Guix.
+            ;; The GPU plugin reads its tuning cache, cache.json, with
+            ;; RapidJSON.  It takes an installed RapidJSON if there is one,
+            ;; and the bundled copy otherwise; take the one of Guix.
             (delete-file-recursively
              "src/plugins/intel_gpu/thirdparty/rapidjson")
 
@@ -233,50 +235,57 @@ and the NPU compiler are built against them.")
       ;; build time.  python-openvino checks that the libraries load.
       #:tests? #f
       #:configure-flags
-      #~(list "-DCPACK_GENERATOR=CONDA-FORGE" ;GNU installation layout
-              ;; Setting CI_BUILD_NUMBER (see 'set-version') would otherwise
-              ;; turn warnings into errors, as in upstream's CI.
-              "-DCMAKE_COMPILE_WARNING_AS_ERROR=OFF"
-              "-DENABLE_SYSTEM_TBB=ON"
-              "-DENABLE_SYSTEM_PUGIXML=ON"
-              "-DENABLE_SYSTEM_PROTOBUF=ON"
-              "-DENABLE_SYSTEM_FLATBUFFERS=ON"
-              "-DENABLE_SYSTEM_SNAPPY=ON"
-              "-DENABLE_SYSTEM_OPENCL=ON"
-              "-DENABLE_SYSTEM_LEVEL_ZERO=ON"
-              ;; The oneDNN fork of the CPU plugin needs OpenCL headers even
-              ;; without GPU runtime; use those from Guix.
-              (string-append "-DDNNL_OCL_INCLUDE_DIR="
-                             #$(this-package-input "opencl-headers")
-                             "/include")
-              "-DTHREADING=TBB"
-              ;; onetbb is built without hwloc, so there is no TBBBind
-              ;; library; do not download a prebuilt static one.
-              "-DENABLE_TBBBIND_2_5=OFF"
-              ;; The ONNX frontend needs onnx >= 1.22, which Guix lacks.
-              "-DENABLE_OV_ONNX_FRONTEND=OFF"
-              ;; The JAX frontend is only installed with the Python
-              ;; bindings, but openvino.pc would list it anyway.
-              "-DENABLE_OV_JAX_FRONTEND=OFF"
-              ;; This would download a prebuilt NPU compiler; the NPU driver
-              ;; and plugin load the one of npu-compiler instead.
-              "-DENABLE_INTEL_NPU_COMPILER=OFF"
-              ;; The internal NPU tools, such as compile_tool, need the
-              ;; bundled gflags.
-              "-DENABLE_INTEL_NPU_INTERNAL=OFF"
-              ;; Windows-only telemetry client of the AUTO plugin.
-              "-DENABLE_IPF_CLIENT_API=OFF"
-              ;; Example plugin for plugin developers.
-              "-DENABLE_TEMPLATE=OFF"
-              "-DENABLE_NCC_STYLE=OFF"
-              "-DENABLE_CLANG_FORMAT=OFF"
-              "-DENABLE_SAMPLES=OFF"
-              "-DENABLE_TESTS=OFF"
-              ;; The Python bindings are built by python-openvino.
-              "-DENABLE_PYTHON=OFF"
-              "-DENABLE_WHEEL=OFF"
-              ;; The Node.js bindings download their headers at build time.
-              "-DENABLE_JS=OFF")
+      #~(list
+         ;; The package format decides the installation layout.  The
+         ;; default, an archive, puts the libraries in
+         ;; runtime/lib/intel64 and the headers in runtime/include;
+         ;; the formats for distributions, such as conda-forge, use
+         ;; the GNU layout of lib, include and share, with the
+         ;; plugins in lib/openvino-<version>.
+         "-DCPACK_GENERATOR=CONDA-FORGE"
+         ;; Setting CI_BUILD_NUMBER (see 'set-version') would otherwise
+         ;; turn warnings into errors, as in upstream's CI.
+         "-DCMAKE_COMPILE_WARNING_AS_ERROR=OFF"
+         "-DENABLE_SYSTEM_TBB=ON"
+         "-DENABLE_SYSTEM_PUGIXML=ON"
+         "-DENABLE_SYSTEM_PROTOBUF=ON"
+         "-DENABLE_SYSTEM_FLATBUFFERS=ON"
+         "-DENABLE_SYSTEM_SNAPPY=ON"
+         "-DENABLE_SYSTEM_OPENCL=ON"
+         "-DENABLE_SYSTEM_LEVEL_ZERO=ON"
+         ;; The oneDNN fork of the CPU plugin needs OpenCL headers even
+         ;; without GPU runtime; use those from Guix.
+         (string-append "-DDNNL_OCL_INCLUDE_DIR="
+                        #$(this-package-input "opencl-headers")
+                        "/include")
+         "-DTHREADING=TBB"
+         ;; onetbb is built without hwloc, so there is no TBBBind
+         ;; library; do not download a prebuilt static one.
+         "-DENABLE_TBBBIND_2_5=OFF"
+         ;; The ONNX frontend needs onnx >= 1.22, which Guix lacks.
+         "-DENABLE_OV_ONNX_FRONTEND=OFF"
+         ;; The JAX frontend is only installed with the Python
+         ;; bindings, but openvino.pc would list it anyway.
+         "-DENABLE_OV_JAX_FRONTEND=OFF"
+         ;; This would download a prebuilt NPU compiler; the NPU driver
+         ;; and plugin load the one of npu-compiler instead.
+         "-DENABLE_INTEL_NPU_COMPILER=OFF"
+         ;; The internal NPU tools, such as compile_tool, need the
+         ;; bundled gflags.
+         "-DENABLE_INTEL_NPU_INTERNAL=OFF"
+         ;; Windows-only telemetry client of the AUTO plugin.
+         "-DENABLE_IPF_CLIENT_API=OFF"
+         ;; Example plugin for plugin developers.
+         "-DENABLE_TEMPLATE=OFF"
+         "-DENABLE_NCC_STYLE=OFF"
+         "-DENABLE_CLANG_FORMAT=OFF"
+         "-DENABLE_SAMPLES=OFF"
+         "-DENABLE_TESTS=OFF"
+         ;; The Python bindings are built by python-openvino.
+         "-DENABLE_PYTHON=OFF"
+         "-DENABLE_WHEEL=OFF"
+         ;; The Node.js bindings download their headers at build time.
+         "-DENABLE_JS=OFF")
       #:phases
       #~(modify-phases %standard-phases
           (add-after 'unpack 'use-system-liburing
@@ -296,20 +305,33 @@ and the NPU compiler are built against them.")
                 ((".*ov_install_static_lib\\(openvino_liburing.*") ""))))
           (add-after 'unpack 'use-system-npu-extensions
             (lambda* (#:key inputs #:allow-other-keys)
+              ;; The headers of the NPU extensions of Level Zero, a Git
+              ;; submodule of OpenVINO, come from the package
+              ;; level-zero-npu-extensions: point the target
+              ;; LevelZero::NPUExt of the NPU plugin to its
+              ;; include/level_zero instead of the empty submodule.
               (substitute* "src/plugins/intel_npu/thirdparty/CMakeLists.txt"
                 (("\\$\\{CMAKE_CURRENT_SOURCE_DIR\\}/level-zero-ext/")
                  (dirname
                   (search-input-file inputs
-                                     "include/level_zero/ze_graph_ext.h"))))
-              ;; This target only exists with the bundled Level Zero.
-              (substitute*
-                  "src/plugins/intel_npu/src/utils/src/vm/CMakeLists.txt"
-                (("^add_dependencies\\(.* prepare_ze_headers\\)" all)
-                 (string-append "if(TARGET prepare_ze_headers)\n    " all
-                                "\nendif()")))))
+                                     "include/level_zero/ze_graph_ext.h"))))))
           (add-after 'unpack 'find-level-zero
             (lambda* (#:key inputs #:allow-other-keys)
-              ;; The NPU plugin opens the Level Zero loader by name.
+              ;; The VM utilities of the NPU plugin wait for the target
+              ;; prepare_ze_headers, which copies the headers of the
+              ;; bundled Level Zero into the build directory.  With the
+              ;; Level Zero of Guix, the target does not exist and CMake
+              ;; stops; the headers are in the store from the start, so
+              ;; there is nothing to wait for.
+              (substitute*
+                  "src/plugins/intel_npu/src/utils/src/vm/CMakeLists.txt"
+                (("^add_dependencies\\(.* prepare_ze_headers\\)") ""))
+              ;; The NPU plugin opens the Level Zero loader with dlopen by
+              ;; its name alone, libze_loader.so.1, which nothing on Guix
+              ;; resolves: the plugin does not link to the loader, so no
+              ;; RUNPATH names it.  Give its full file name in the store
+              ;; instead.  That name ends in ".1", the suffix that the code
+              ;; appends to the bare name; remove that step.
               (substitute* "src/common/zero_loader/src/zero.api.cpp"
                 (("ov::util::make_plugin_library_name\\(\\{\\}, baseName\\);")
                  (string-append
@@ -327,8 +349,12 @@ and the NPU compiler are built against them.")
                  "find_package(Protobuf 6 QUIET CONFIG)"))))
           (add-after 'unpack 'keep-install-rpath
             (lambda _
-              ;; Like Homebrew, Guix relies on RUNPATHs to find
-              ;; libopenvino.so from the frontends and plugins.
+              ;; The layout chosen with CPACK_GENERATOR removes the
+              ;; RUNPATHs when installing, as libraries in distributions
+              ;; lie in standard directories.  Guix has none: the plugins
+              ;; and frontends find libopenvino.so and the other libraries
+              ;; through their RUNPATHs.  Keep them, as upstream does for
+              ;; Homebrew, which relies on RUNPATHs too.
               (with-directory-excursion "cmake/developer_package/packaging"
                 (substitute* "common-libraries.cmake"
                   (("if\\(CPACK_GENERATOR STREQUAL \"BREW\"\\)")
@@ -340,8 +366,11 @@ and the NPU compiler are built against them.")
                       (string-append #$version "-000-guix"))))
           (add-after 'install 'fix-pkg-config-file
             (lambda _
-              ;; pugixml is only used by libopenvino.so itself; list it for
-              ;; static linking only.
+              ;; openvino.pc lists pugixml for every program that links to
+              ;; openvino, although only libopenvino.so uses it and finds it
+              ;; through its RUNPATH.  pugixml is not propagated, so
+              ;; linking such programs would fail; list it for static
+              ;; linking only.
               (substitute* (string-append #$output
                                           "/lib/pkgconfig/openvino.pc")
                 ((" -lpugixml") "")
